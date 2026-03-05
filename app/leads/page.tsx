@@ -67,6 +67,9 @@ const MOCK_LEADS = [
   }
 ];
 
+import { useAuth } from '@/hooks/useAuth';
+import { useRouter } from 'next/navigation';
+
 const STAGES = [
   'Cadastrado',
   '1° Contato',
@@ -81,8 +84,11 @@ const SALESPEOPLE = ['Jonathan', 'Isabele', 'Jaqueline'];
 const PRODUCTS = ['Placas de Drywall', 'Exaustores Eólicos'];
 
 export default function LeadsPage() {
+  const { user, profile, loading: authLoading, isAdmin } = useAuth();
+  const router = useRouter();
   const [mounted, setMounted] = React.useState(false);
   const [leads, setLeads] = React.useState<any[]>([]);
+  const [salespeople, setSalespeople] = React.useState<any[]>([]);
   const [isLoading, setIsLoading] = React.useState(true);
   const [showAllLeads, setShowAllLeads] = React.useState(false);
   
@@ -107,7 +113,7 @@ export default function LeadsPage() {
     "Estágio": "Cadastrado",
     "Data de Envio (Proposta-Follow Up))": "",
     "Endereço": "",
-    "Vendedor": "Jonathan",
+    "Vendedor": "",
     "Responsável da Empresa": "",
     "Como conheceu?": "",
     "Cidade": "",
@@ -118,6 +124,18 @@ export default function LeadsPage() {
     "Ultimo contato (Lead)": new Date().toISOString(),
     "Observações": ""
   });
+
+  // Set default salesperson when profile is loaded
+  React.useEffect(() => {
+    if (profile) {
+      setFormData(prev => {
+        if (!prev["Vendedor"]) {
+          return { ...prev, "Vendedor": profile.name };
+        }
+        return prev;
+      });
+    }
+  }, [profile]);
 
   // Helper to map UI form data to DB columns
   const mapFormDataToDb = (data: any) => {
@@ -146,15 +164,29 @@ export default function LeadsPage() {
 
   React.useEffect(() => {
     async function fetchLeads() {
-      if (!supabase) {
-        console.warn('Supabase is not configured');
+      if (!supabase || !user) {
+        if (!authLoading && !user) router.push('/');
+        console.warn('Supabase is not configured or user not logged in');
         setIsLoading(false);
         return;
       }
       try {
-        const { data, error } = await supabase
-          .from('leads')
-          .select('*');
+        // Fetch salespeople for the filter and form
+        const { data: usersData } = await supabase
+          .from('internal_users')
+          .select('id, name, role');
+        
+        if (usersData) {
+          setSalespeople(usersData);
+        }
+
+        let query = supabase.from('leads').select('*');
+        
+        if (!isAdmin && profile) {
+          query = query.eq('salesperson_name', profile.name);
+        }
+
+        const { data, error } = await query;
 
         if (error) {
           console.error('Error fetching leads from Supabase:', error);
@@ -255,13 +287,19 @@ export default function LeadsPage() {
 
     fetchLeads();
     setMounted(true);
-  }, []);
+  }, [user, profile, isAdmin, authLoading, router]);
 
   const handleCreateLead = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!supabase) return;
+    if (!supabase || !user) return;
     try {
       const dbData = mapFormDataToDb(formData);
+      
+      // Auto-assign salesperson if not admin
+      if (!isAdmin) {
+        dbData.salesperson_id = user.id;
+        dbData["Vendedor"] = profile?.name || user.username;
+      }
       
       const { data, error } = await supabase
         .from('leads')
@@ -278,9 +316,17 @@ export default function LeadsPage() {
 
   const handleUpdateLead = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!supabase) return;
+    if (!supabase || !user) return;
     try {
       const dbData = mapFormDataToDb(formData);
+      
+      // If admin changed the salesperson, we should try to update salesperson_id too
+      if (isAdmin && formData["Vendedor"]) {
+        const selectedSalesperson = salespeople.find(s => s.name === formData["Vendedor"]);
+        if (selectedSalesperson) {
+          dbData.salesperson_id = selectedSalesperson.id;
+        }
+      }
 
       const { error } = await supabase
         .from('leads')
@@ -475,7 +521,7 @@ export default function LeadsPage() {
                   onChange={(e) => setSalespersonFilter(e.target.value)}
                 >
                   <option>Todos os Vendedores</option>
-                  {SALESPEOPLE.map(s => <option key={s}>{s}</option>)}
+                  {salespeople.map(s => <option key={s.id} value={s.name}>{s.name}</option>)}
                 </select>
                 <ChevronDown className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" size={16} />
               </div>
@@ -947,11 +993,18 @@ export default function LeadsPage() {
                       <div className="space-y-2">
                         <label className="text-[10px] font-black uppercase tracking-widest text-slate-500">Vendedor</label>
                         <select 
-                          className="w-full bg-slate-50 border border-slate-200 rounded-xl py-3 px-4 text-sm text-slate-900 focus:ring-2 focus:ring-blue-600/50 focus:border-blue-600 outline-none transition-all cursor-pointer"
+                          className={cn(
+                            "w-full bg-slate-50 border border-slate-200 rounded-xl py-3 px-4 text-sm text-slate-900 focus:ring-2 focus:ring-blue-600/50 focus:border-blue-600 outline-none transition-all",
+                            !isAdmin ? "opacity-50 cursor-not-allowed" : "cursor-pointer"
+                          )}
                           value={formData["Vendedor"]}
                           onChange={(e) => setFormData({...formData, "Vendedor": e.target.value})}
+                          disabled={!isAdmin}
                         >
-                          {SALESPEOPLE.map(s => <option key={s}>{s}</option>)}
+                          {salespeople.length > 0 
+                            ? salespeople.map(s => <option key={s.id} value={s.name}>{s.name}</option>)
+                            : <option value={formData["Vendedor"]}>{formData["Vendedor"]}</option>
+                          }
                         </select>
                       </div>
                       <div className="space-y-2">

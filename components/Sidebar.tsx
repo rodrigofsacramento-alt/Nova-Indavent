@@ -19,7 +19,7 @@ import {
 import { cn } from '@/lib/utils';
 
 const navItems = [
-  { name: 'Dashboard', icon: LayoutDashboard, href: '/' },
+  { name: 'Dashboard', icon: LayoutDashboard, href: '/dashboard' },
   { name: 'Leads', icon: Users, href: '/leads' },
   { name: 'Contatos', icon: UserCircle, href: '/contacts' },
   { name: 'Oportunidades', icon: Briefcase, href: '/opportunities' },
@@ -29,14 +29,23 @@ const navItems = [
 
 import Image from 'next/image';
 
+import { useAuth } from '@/hooks/useAuth';
+
 export function Sidebar() {
   const pathname = usePathname();
   const router = useRouter();
+  const { profile, isAdmin } = useAuth();
 
   const handleLogout = () => {
     Cookies.remove('auth_session');
-    router.push('/login');
+    Cookies.remove('user_data');
+    router.push('/');
   };
+
+  const filteredNavItems = [
+    ...navItems,
+    ...(isAdmin ? [{ name: 'Usuários', icon: Settings, href: '/admin/users' }] : [])
+  ];
 
   return (
     <aside className="w-64 flex-shrink-0 border-r border-slate-800 bg-slate-950 hidden lg:flex flex-col h-screen sticky top-0">
@@ -55,7 +64,7 @@ export function Sidebar() {
 
         {/* Nav Links */}
         <nav className="flex-1 space-y-1">
-          {navItems.map((item) => {
+          {filteredNavItems.map((item) => {
             const isActive = pathname === item.href || (item.href !== '/' && pathname.startsWith(item.href));
             return (
               <Link
@@ -94,18 +103,12 @@ export function Sidebar() {
           </button>
 
           <div className="flex items-center gap-3 p-2 mt-4 bg-slate-900/50 rounded-xl border border-slate-800">
-            <div className="size-9 rounded-full bg-slate-800 overflow-hidden ring-2 ring-slate-800 relative">
-              <Image 
-                className="w-full h-full object-cover" 
-                src="https://picsum.photos/seed/user1/100/100" 
-                alt="User profile"
-                fill
-                referrerPolicy="no-referrer"
-              />
+            <div className="size-9 rounded-full bg-blue-600 flex items-center justify-center text-white font-black text-sm uppercase ring-2 ring-slate-800 relative">
+              {profile?.name?.[0] || profile?.username?.[0] || '?'}
             </div>
             <div className="flex-1 min-w-0">
-              <p className="text-xs font-semibold truncate">João Martins</p>
-              <p className="text-[10px] text-slate-500 truncate">Administrador</p>
+              <p className="text-xs font-semibold truncate">{profile?.name || 'Carregando...'}</p>
+              <p className="text-[10px] text-slate-500 truncate uppercase tracking-widest font-bold">{profile?.role || '...'}</p>
             </div>
             <button 
               onClick={handleLogout}
