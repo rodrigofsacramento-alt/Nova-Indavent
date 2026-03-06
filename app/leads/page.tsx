@@ -128,7 +128,7 @@ export default function LeadsPage() {
   // Set default salesperson when profile is loaded
   React.useEffect(() => {
     if (profile) {
-      setFormData(prev => {
+      setFormData((prev: any) => {
         if (!prev["Vendedor"]) {
           return { ...prev, "Vendedor": profile.name };
         }
@@ -138,7 +138,7 @@ export default function LeadsPage() {
   }, [profile]);
 
   // Helper to map UI form data to DB columns
-  const mapFormDataToDb = (data: any) => {
+  const mapFormDataToDb = (data: any): any => {
     return {
       name: data["Nome"],
       stage: data["Estágio"],
@@ -297,8 +297,8 @@ export default function LeadsPage() {
       
       // Auto-assign salesperson if not admin
       if (!isAdmin) {
-        dbData.salesperson_id = user.id;
-        dbData["Vendedor"] = profile?.name || user.username;
+        (dbData as any).salesperson_id = user.id;
+        (dbData as any)["Vendedor"] = profile?.name || user.username;
       }
       
       const { data, error } = await supabase
