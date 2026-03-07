@@ -28,7 +28,9 @@ import {
   Copy,
   CheckCircle2,
   Loader2,
-  FileUp
+  FileUp,
+  Fingerprint,
+  Calculator
 } from 'lucide-react';
 import { 
   BarChart, 
@@ -746,8 +748,12 @@ export default function LeadsPage() {
   };
 
   const saveGeneratedProposal = async () => {
-    if (!supabase || !selectedLead) {
-      console.error('Cannot save proposal: Supabase or selectedLead missing', { supabase: !!supabase, selectedLead: !!selectedLead });
+    if (!supabase) {
+      alert('O Supabase não está configurado. Verifique as variáveis de ambiente.');
+      return;
+    }
+    if (!selectedLead) {
+      alert('Nenhum lead selecionado.');
       return;
     }
     
@@ -785,6 +791,18 @@ export default function LeadsPage() {
       const totalItems = proposalItems.reduce((acc, item) => acc + (item.price * item.quantity), 0);
       const totalProposal = totalItems + Number(freightCost);
       
+      if (isNaN(totalProposal)) {
+        alert('O valor total do orçamento é inválido. Verifique os preços e o frete.');
+        setIsSaving(false);
+        return;
+      }
+      
+      if (isNaN(totalProposal)) {
+        alert('O valor total do orçamento é inválido. Verifique os preços e o frete.');
+        setIsSaving(false);
+        return;
+      }
+      
       const proposalData = {
         items: proposalItems,
         freight: freightCost,
@@ -807,30 +825,39 @@ export default function LeadsPage() {
       };
 
       // 1. Save to orcamentos table
-      console.log('Inserting into orcamentos table...');
+      console.log('Detecting orcamentos columns...');
+      const { data: orcColsData } = await supabase.from('orcamentos').select('*').limit(1);
+      const orcCols = orcColsData && orcColsData.length > 0 ? Object.keys(orcColsData[0]) : [];
+      console.log('Detected orcamentos columns:', orcCols);
+
+      const orcamentoPayload: any = {
+        lead_id: selectedLead.id,
+        client_data: proposalData.client,
+        items: proposalItems,
+        freight_cost: freightCost,
+        total_value: totalProposal,
+        notes: proposalNotes,
+        status: 'Gerado'
+      };
+
+      // Add optional columns only if they exist in DB
+      if (orcCols.includes('payment_method')) orcamentoPayload.payment_method = paymentMethod;
+      if (orcCols.includes('delivery_deadline')) orcamentoPayload.delivery_deadline = deliveryDeadline;
+      if (orcCols.includes('validity_date')) orcamentoPayload.validity_date = validityDate;
+
+      console.log('Inserting into orcamentos table with payload:', orcamentoPayload);
       const { data: orcamento, error: orcamentoError } = await supabase
         .from('orcamentos')
-        .insert({
-          lead_id: selectedLead.id,
-          client_data: proposalData.client,
-          items: proposalItems,
-          freight_cost: freightCost,
-          total_value: totalProposal,
-          payment_method: paymentMethod,
-          delivery_deadline: deliveryDeadline,
-          validity_date: validityDate,
-          notes: proposalNotes,
-          status: 'Gerado'
-        })
+        .insert(orcamentoPayload)
         .select()
         .single();
 
       if (orcamentoError) {
-        console.error('Error in orcamentos table:', orcamentoError);
+        console.error('Error in orcamentos table:', orcamentoError.message, orcamentoError.code, orcamentoError.details);
         if (orcamentoError.code === '42P01') {
           throw new Error('A tabela "orcamentos" não foi encontrada no banco de dados. Por favor, execute o SQL de criação das tabelas.');
         }
-        throw orcamentoError;
+        throw new Error(`Erro ao salvar orçamento: ${orcamentoError.message || 'Erro desconhecido'}`);
       }
 
       console.log('Orcamento saved:', orcamento.id);
@@ -839,24 +866,31 @@ export default function LeadsPage() {
       const proposalHtml = generateProposalHtml(proposalData, selectedLead);
 
       // 3. Save to propostas table
+      console.log('Detecting propostas columns...');
+      const { data: propColsData } = await supabase.from('propostas').select('*').limit(1);
+      const propCols = propColsData && propColsData.length > 0 ? Object.keys(propColsData[0]) : [];
+      
+      const propostaPayload: any = {
+        lead_id: selectedLead.id,
+        html_content: proposalHtml,
+        status: 'Enviada'
+      };
+
+      if (propCols.includes('orcamento_id')) propostaPayload.orcamento_id = orcamento.id;
+
       console.log('Inserting into propostas table...');
       const { data: proposta, error: propostaError } = await supabase
         .from('propostas')
-        .insert({
-          lead_id: selectedLead.id,
-          orcamento_id: orcamento.id,
-          html_content: proposalHtml,
-          status: 'Enviada'
-        })
+        .insert(propostaPayload)
         .select()
         .single();
 
       if (propostaError) {
-        console.error('Error in propostas table:', propostaError);
+        console.error('Error in propostas table:', propostaError.message, propostaError.code, propostaError.details);
         if (propostaError.code === '42P01') {
           throw new Error('A tabela "propostas" não foi encontrada no banco de dados. Por favor, execute o SQL de criação das tabelas.');
         }
-        throw propostaError;
+        throw new Error(`Erro ao salvar proposta: ${propostaError.message || 'Erro desconhecido'}`);
       }
 
       // 4. Update leads table
@@ -904,6 +938,17 @@ export default function LeadsPage() {
       fetchLeads();
     } catch (err: any) {
       console.error('Detailed error saving proposal:', err);
+      if (err instanceof Error) {
+        console.error('Error message:', err.message);
+        console.error('Error stack:', err.stack);
+      } else {
+        console.error('Error object (stringified):', JSON.stringify(err, null, 2));
+      }
+      if (err.code) console.error('Error code:', err.code);
+      if (err.details) console.error('Error details:', err.details);
+      if (err.hint) console.error('Error hint:', err.hint);
+      if (err.message) console.error('Error message (direct):', err.message);
+      
       alert(`Erro ao salvar: ${err.message || 'Verifique se as tabelas orcamentos e propostas foram criadas no Supabase.'}`);
     } finally {
       setIsSaving(false);
