@@ -40,7 +40,7 @@ const performanceData = [
 ];
 
 const topProducts = [
-  { name: 'Placas de Drywall', units: '1.240 units', value: '$14.5k', icon: LayoutGrid },
+  { name: 'Perfis de Drywall', units: '1.240 units', value: '$14.5k', icon: LayoutGrid },
   { name: 'Massas e Tintas', units: '850 units', value: '$9.2k', icon: Paintbrush },
   { name: 'Perfis de Aço', units: '420 units', value: '$11.8k', icon: Ruler },
   { name: 'Parafusos e Fixação', units: '5.000+ units', value: '$4.1k', icon: Hammer },

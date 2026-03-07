@@ -25,7 +25,7 @@ const chats = [
     id: 1,
     name: 'BRASVALI GESSOS',
     avatar: 'https://picsum.photos/seed/bg/100/100',
-    lastMessage: 'Olá, qual o status da proposta das Placas de Drywall?',
+    lastMessage: 'Olá, qual o status da proposta dos Perfis de Drywall?',
     time: '14:30',
     active: true,
     online: true,
@@ -57,10 +57,10 @@ const chats = [
 ];
 
 const messages = [
-  { id: 1, type: 'received', text: 'Bom dia! Consegue me enviar a lista de preços das Placas de Drywall?', time: '09:12' },
+  { id: 1, type: 'received', text: 'Bom dia! Consegue me enviar a lista de preços dos Perfis de Drywall?', time: '09:12' },
   { id: 2, type: 'sent', text: 'Olá! Com certeza. Estou anexando o catálogo e a proposta comercial com as condições especiais para Campinas.', time: '09:15' },
   { id: 3, type: 'sent', file: { name: 'Proposta_Drywall_V1.pdf', size: '2.4 MB' }, time: '09:16' },
-  { id: 4, type: 'received', text: 'Olá, qual o status da proposta das Placas de Drywall? Acabamos de validar o orçamento interno aqui.', time: '14:30' },
+  { id: 4, type: 'received', text: 'Olá, qual o status da proposta dos Perfis de Drywall? Acabamos de validar o orçamento interno aqui.', time: '14:30' },
 ];
 
 export default function WhatsAppPage() {

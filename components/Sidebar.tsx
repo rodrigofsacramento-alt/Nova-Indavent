@@ -52,14 +52,19 @@ export function Sidebar() {
       <div className="p-6 flex flex-col h-full">
         {/* Brand */}
         <div className="flex flex-col gap-1 mb-8">
-          <div className="flex items-baseline gap-0.5">
-            <span className="text-2xl font-black italic text-blue-500 tracking-tighter">Nova</span>
-            <span className="text-2xl font-black text-slate-400 tracking-tighter uppercase">Indavent</span>
+          <div className="relative w-full h-12 mb-2">
+            <Image 
+              src="/logo.png" 
+              alt="Indavent Logo" 
+              fill 
+              className="object-contain object-left brightness-0 invert"
+              priority
+            />
           </div>
           <div className="h-[1px] w-full bg-slate-800 relative">
             <div className="absolute inset-0 bg-gradient-to-r from-blue-500 to-slate-400 opacity-50"></div>
           </div>
-          <p className="text-[8px] font-bold uppercase tracking-[0.2em] text-slate-500 text-center">Exaustores e Perfis</p>
+          <p className="text-[8px] font-bold uppercase tracking-[0.2em] text-slate-500 text-center">Exaustor e Perfis</p>
         </div>
 
         {/* Nav Links */}

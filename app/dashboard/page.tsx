@@ -82,8 +82,8 @@ export default function DashboardPage() {
     avgSalesCycle: 18
   });
   const [productSales, setProductSales] = React.useState([
-    { name: 'Placas de Drywall', value: 0 },
-    { name: 'Exaustores Eólicos', value: 0 },
+    { name: 'Perfis de Drywall', value: 0 },
+    { name: 'Exaustor Eólico', value: 0 },
   ]);
   const [distribution, setDistribution] = React.useState([
     { stage: 'Cadastrado', count: 0, percentage: 0, conversionRate: 0 },
@@ -162,15 +162,15 @@ export default function DashboardPage() {
 
           // Product Sales
           const drywallSales = leads
-            .filter(l => (l["Produto"] || l["product"] || l["produto"]) === 'Placas de Drywall' && (l["Estágio"] || l["stage"] || l["estagio"]) === 'Cliente')
+            .filter(l => (l["Produto"] || l["product"] || l["produto"]) === 'Perfis de Drywall' && (l["Estágio"] || l["stage"] || l["estagio"]) === 'Cliente')
             .reduce((acc, curr) => acc + (Number(curr["Orçamento"] || curr["budget"] || curr["orcamento"]) || 0), 0);
           const exhaustSales = leads
-            .filter(l => (l["Produto"] || l["product"] || l["produto"]) === 'Exaustores Eólicos' && (l["Estágio"] || l["stage"] || l["estagio"]) === 'Cliente')
+            .filter(l => (l["Produto"] || l["product"] || l["produto"]) === 'Exaustor Eólico' && (l["Estágio"] || l["stage"] || l["estagio"]) === 'Cliente')
             .reduce((acc, curr) => acc + (Number(curr["Orçamento"] || curr["budget"] || curr["orcamento"]) || 0), 0);
 
           setProductSales([
-            { name: 'Placas de Drywall', value: drywallSales },
-            { name: 'Exaustores Eólicos', value: exhaustSales },
+            { name: 'Perfis de Drywall', value: drywallSales },
+            { name: 'Exaustor Eólico', value: exhaustSales },
           ]);
 
           setStats(prev => ({

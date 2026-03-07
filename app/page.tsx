@@ -52,8 +52,8 @@ export default function LoginPage() {
       console.log('Login realizado com sucesso:', user.name);
 
       // Salva os dados do usuário no cookie para manter a sessão
-      Cookies.set('auth_session', 'true', { expires: 7, sameSite: 'none', secure: true });
-      Cookies.set('user_data', JSON.stringify(user), { expires: 7, sameSite: 'none', secure: true });
+      Cookies.set('auth_session', 'true', { expires: 7, sameSite: 'lax' });
+      Cookies.set('user_data', JSON.stringify(user), { expires: 7, sameSite: 'lax' });
       
       router.push('/dashboard');
       setTimeout(() => {
@@ -73,14 +73,19 @@ export default function LoginPage() {
         <div className="text-center space-y-6">
           <div className="flex justify-center">
             <div className="bg-white p-6 rounded-2xl shadow-2xl shadow-blue-600/10 border border-slate-200 flex flex-col items-center">
-              <div className="flex items-baseline gap-0.5">
-                <span className="text-4xl font-black italic text-blue-600 tracking-tighter">Nova</span>
-                <span className="text-4xl font-black text-slate-700 tracking-tighter uppercase">Indavent</span>
+              <div className="relative w-48 h-16">
+                <Image 
+                  src="/logo.png" 
+                  alt="Indavent Logo" 
+                  fill 
+                  className="object-contain"
+                  priority
+                />
               </div>
               <div className="w-full h-[2px] bg-slate-300 my-1 relative overflow-hidden">
                 <div className="absolute inset-0 bg-gradient-to-r from-blue-600 to-slate-700 opacity-30"></div>
               </div>
-              <p className="text-[10px] font-bold uppercase tracking-[0.3em] text-slate-500">Exaustores e Perfis</p>
+              <p className="text-[10px] font-bold uppercase tracking-[0.3em] text-slate-500">Exaustor e Perfis</p>
             </div>
           </div>
           <div className="space-y-2">

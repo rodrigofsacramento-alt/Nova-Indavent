@@ -26,7 +26,9 @@ import {
   Package,
   Trash2,
   Copy,
-  CheckCircle2
+  CheckCircle2,
+  Loader2,
+  FileUp
 } from 'lucide-react';
 import { 
   BarChart, 
@@ -55,7 +57,7 @@ const MOCK_LEADS = [
     stage: 'Proposta Solicitada',
     salesperson: 'Jonathan',
     salespersonInitials: 'J',
-    product: 'Placas de Drywall',
+    product: 'Perfis de Drywall',
     budget: 'R$ 12.450,00',
     deliveryDeadline: '15 dias',
     proposalDate: '03/03/2026',
@@ -81,7 +83,7 @@ const STAGES = [
 ];
 
 const SALESPEOPLE = ['Jonathan', 'Isabele', 'Jaqueline'];
-const PRODUCTS = ['Placas de Drywall', 'Exaustores Eólicos'];
+const PRODUCTS = ['Perfis de Drywall', 'Exaustor Eólico'];
 
 export default function LeadsPage() {
   const { user, profile, loading: authLoading, isAdmin } = useAuth();
@@ -115,14 +117,15 @@ export default function LeadsPage() {
     "Endereço": "",
     "Vendedor": "",
     "Responsável da Empresa": "",
-    "Como conheceu?": "",
+    "Origem do Lead": "",
     "Cidade": "",
     "Telefone": "",
     "Tipo": "",
-    "Produto": "Placas de Drywall",
+    "Produto": "Perfis de Drywall",
     "Orçamento": 0,
     "Ultimo contato (Lead)": new Date().toISOString(),
-    "Observações": ""
+    "Observações": "",
+    "Proposta": ""
   });
 
   // Set default salesperson when profile is loaded
@@ -137,23 +140,100 @@ export default function LeadsPage() {
     }
   }, [profile]);
 
+  const [isSaving, setIsSaving] = React.useState(false);
+  const [dbColumns, setDbColumns] = React.useState<string[]>([]);
+
   // Helper to map UI form data to DB columns
   const mapFormDataToDb = (data: any): any => {
+    console.log('Mapping form data to DB. Current formData:', data);
+    console.log('Detected DB columns:', dbColumns);
+
+    // Comprehensive map of all possible column names we've seen or might use
+    const fullMap: any = {
+      "Nome": data["Nome"],
+      "name": data["Nome"],
+      "nome": data["Nome"],
+      "Estágio": data["Estágio"],
+      "stage": data["Estágio"],
+      "estagio": data["Estágio"],
+      "Data de Envio (Proposta-Follow Up))": data["Data de Envio (Proposta-Follow Up))"] || null,
+      "proposal_sent_at": data["Data de Envio (Proposta-Follow Up))"] || null,
+      "data_envio": data["Data de Envio (Proposta-Follow Up))"] || null,
+      "Endereço": data["Endereço"],
+      "address": data["Endereço"],
+      "endereco": data["Endereço"],
+      "Vendedor": data["Vendedor"],
+      "salesperson_name": data["Vendedor"],
+      "vendedor": data["Vendedor"],
+      "Vendedor.": data["Vendedor"],
+      "Responsável da Empresa": data["Responsável da Empresa"],
+      "company_responsible": data["Responsável da Empresa"],
+      "Como conheceu?": data["Origem do Lead"],
+      "source_details": data["Origem do Lead"],
+      "source": data["Origem do Lead"],
+      "origem": data["Origem do Lead"],
+      "Cidade": data["Cidade"],
+      "city": data["Cidade"],
+      "cidade": data["Cidade"],
+      "Telefone": data["Telefone"],
+      "phone": data["Telefone"],
+      "telefone": data["Telefone"],
+      "Phone": data["Telefone"],
+      "Tipo": data["Tipo"],
+      "lead_type": data["Tipo"],
+      "type": data["Tipo"],
+      "tipo": data["Tipo"],
+      "Produto": data["Produto"],
+      "product": data["Produto"],
+      "produto": data["Produto"],
+      "Orçamento": Number(data["Orçamento"]) || 0,
+      "budget": Number(data["Orçamento"]) || 0,
+      "orcamento": Number(data["Orçamento"]) || 0,
+      "Ultimo contato (Lead)": data["Ultimo contato (Lead)"] || null,
+      "last_contact": data["Ultimo contato (Lead)"] || null,
+      "ultimo_contato": data["Ultimo contato (Lead)"] || null,
+      "Observações": data["Observações"],
+      "observations": data["Observações"],
+      "observacoes": data["Observações"],
+      "Proposta": data["Proposta"],
+      "proposal": data["Proposta"],
+      "proposta": data["Proposta"]
+    };
+
+    // If we have detected columns from the DB, only send those that exist
+    if (dbColumns.length > 0) {
+      const filtered: any = {};
+      dbColumns.forEach(col => {
+        if (fullMap[col] !== undefined) {
+          filtered[col] = fullMap[col];
+        }
+      });
+      
+      // Ensure ID and system timestamps are never in the update/insert payload
+      delete filtered.id;
+      delete filtered.created_at;
+      delete filtered.updated_at;
+      delete filtered["Created time"];
+      delete filtered["ultima atualização"];
+      
+      console.log('Filtered data to send to DB:', filtered);
+      return filtered;
+    }
+
+    // Fallback: return a reasonably safe subset if columns aren't known yet
     return {
-      name: data["Nome"],
-      stage: data["Estágio"],
-      proposal_sent_at: data["Data de Envio (Proposta-Follow Up))"] || null,
-      address: data["Endereço"],
-      salesperson_name: data["Vendedor"],
-      company_responsible: data["Responsável da Empresa"],
-      source_details: data["Como conheceu?"],
-      city: data["Cidade"],
-      phone: data["Telefone"],
-      lead_type: data["Tipo"],
-      product: data["Produto"],
-      budget: data["Orçamento"],
-      last_contact: data["Ultimo contato (Lead)"] || null,
-      observations: data["Observações"]
+      "Nome": data["Nome"],
+      "Estágio": data["Estágio"],
+      "Telefone": data["Telefone"],
+      "Produto": data["Produto"],
+      "Vendedor": data["Vendedor"],
+      "Orçamento": Number(data["Orçamento"]) || 0,
+      "Observações": data["Observações"],
+      "Como conheceu?": data["Origem do Lead"],
+      "Cidade": data["Cidade"],
+      "Endereço": data["Endereço"],
+      "Data de Envio (Proposta-Follow Up))": data["Data de Envio (Proposta-Follow Up))"] || null,
+      "Proposta": data["Proposta"]
     };
   };
 
@@ -162,161 +242,189 @@ export default function LeadsPage() {
     return ['Todas as Cidades', ...Array.from(new Set(allCities))];
   }, [leads]);
 
-  React.useEffect(() => {
-    async function fetchLeads() {
-      if (!supabase || !user) {
-        if (!authLoading && !user) router.push('/');
-        console.warn('Supabase is not configured or user not logged in');
-        setIsLoading(false);
-        return;
-      }
-      try {
-        // Fetch salespeople for the filter and form
-        const { data: usersData } = await supabase
-          .from('internal_users')
-          .select('id, name, role');
-        
-        if (usersData) {
-          setSalespeople(usersData);
-        }
-
-        let query = supabase.from('leads').select('*');
-        
-        if (!isAdmin && profile) {
-          query = query.eq('salesperson_name', profile.name);
-        }
-
-        const { data, error } = await query;
-
-        if (error) {
-          console.error('Error fetching leads from Supabase:', error);
-          console.error('Error details:', {
-            message: error.message,
-            details: error.details,
-            hint: error.hint,
-            code: error.code
-          });
-          throw error;
-        }
-
-        if (data) {
-          console.log(`Fetched ${data.length} leads from Supabase`);
-          const formattedLeads = data.map(item => {
-            // Priority Formula
-            let priorityStatus = '';
-            const proposalSentAt = item["Data de Envio (Proposta-Follow Up))"];
-            const deadlineDays = item["Prazo de Resposta"] || 2;
-
-            if (item["Estágio"] === "Proposta Solicitada" && proposalSentAt) {
-              const proposalDate = new Date(proposalSentAt);
-              const today = new Date();
-              const targetDate = new Date(proposalDate);
-              targetDate.setDate(targetDate.getDate() + (deadlineDays - 2));
-              
-              const diffTime = today.getTime() - targetDate.getTime();
-              const diffDays = Math.floor(diffTime / (1000 * 60 * 60 * 24));
-              
-              if (diffDays > 2) {
-                priorityStatus = '🚨Entrar em contato';
-              } else {
-                priorityStatus = '⌛Aguardando Retorno';
-              }
-            }
-
-            // Salesperson Mapping
-            let mappedSalesperson = 'Jonathan';
-            const salespersonName = item["salesperson_name"] || item["Vendedor"] || item["Vendedor."];
-            if (salespersonName === 'Administrador principal Indavent Exaustores') {
-              mappedSalesperson = 'Isabele';
-            } else if (salespersonName === 'Vendas') {
-              mappedSalesperson = 'Jonathan';
-            } else if (salespersonName) {
-              mappedSalesperson = salespersonName;
-            }
-            
-            // Normalize Jaquelina to Jaqueline
-            if (mappedSalesperson === 'Jaquelina') mappedSalesperson = 'Jaqueline';
-
-            // Fallback for phone column
-            const phoneValue = item["Telefone"] || item["telefone"] || item["Phone"] || item["phone"];
-
-            return {
-              ...item,
-              id: item.id,
-              company: item["Nome"] || item["name"] || "Sem Nome",
-              initials: (item["Nome"] || item["name"] || "??").split(' ').map((n: string) => n[0]).join('').substring(0, 2),
-              address: item["Endereço"] || item["address"] || 'Endereço não informado',
-              city: item["Cidade"] || item["city"],
-              tags: item["Tipo"] ? [item["Tipo"]] : [],
-              source: item["Como conheceu?"] || item["source"] || 'WhatsApp',
-              stage: item["Estágio"] || item["stage"] || 'Cadastrado',
-              salesperson: mappedSalesperson,
-              salespersonInitials: mappedSalesperson[0],
-              product: item["Produto"] || item["product"] || 'Placas de Drywall',
-              budget: item["Orçamento"] ? new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(item["Orçamento"]) : 'R$ 0,00',
-              budgetValue: Number(item["Orçamento"]) || 0,
-              deliveryDeadline: item["Prazo de Entrega"] || item["delivery_deadline"] || 'N/A',
-              proposalDate: proposalSentAt ? new Date(proposalSentAt).toLocaleDateString('pt-BR') : 'N/A',
-              deadline: `${deadlineDays} dias`,
-              followUp: priorityStatus,
-              phone: phoneValue,
-              hasDocs: !!item["Proposta"],
-              proposalLink: item["Proposta"],
-              color: item["Estágio"] === 'Cliente' ? 'emerald' : item["Estágio"] === 'Perdido' ? 'rose' : 'blue',
-              priorityValue: priorityStatus === '🚨Entrar em contato' ? 1 : 2,
-              updatedAt: item.updated_at || item.created_at
-            };
-          });
-
-          // Sort by priority (🚨 first), then by last update
-          formattedLeads.sort((a, b) => {
-            if (a.priorityValue !== b.priorityValue) {
-              return a.priorityValue - b.priorityValue;
-            }
-            return new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime();
-          });
-          
-          setLeads(formattedLeads);
-        }
-      } catch (err) {
-        console.error('Error fetching leads:', err);
-      } finally {
-        setIsLoading(false);
-      }
+  const fetchLeads = React.useCallback(async () => {
+    if (!supabase || !user) {
+      if (!authLoading && !user) router.push('/');
+      console.warn('Supabase is not configured or user not logged in');
+      setIsLoading(false);
+      return;
     }
+    try {
+      setIsLoading(true);
+      // Fetch salespeople for the filter and form
+      const { data: usersData } = await supabase
+        .from('internal_users')
+        .select('id, name, role');
+      
+      if (usersData) {
+        setSalespeople(usersData);
+      }
 
+      let query = supabase.from('leads').select('*');
+      
+      if (!isAdmin && profile) {
+        query = query.eq('salesperson_name', profile.name);
+      }
+
+      const { data, error } = await query;
+
+      if (error) {
+        console.error('Error fetching leads from Supabase:', error);
+        throw error;
+      }
+
+      if (data) {
+        console.log(`Fetched ${data.length} leads from Supabase`);
+        if (data.length > 0) {
+          const keys = Object.keys(data[0]);
+          console.log('Detected DB columns:', keys);
+          setDbColumns(keys);
+        }
+        
+        const formattedLeads = data.map(item => {
+          // Priority Formula
+          let priorityStatus = '';
+          const proposalSentAt = item["Data de Envio (Proposta-Follow Up))"] || item["proposal_sent_at"] || item["data_envio"];
+          const currentStage = item["Estágio"] || item["stage"] || item["estagio"] || 'Cadastrado';
+          const deadlineDays = item["Prazo de Resposta"] || item["prazo_resposta"] || 2;
+
+          // Rule: If today is more than 2 days after the proposal date, show alarm
+          if (proposalSentAt && !['Cliente', 'Perdido'].includes(currentStage)) {
+            const proposalDate = new Date(proposalSentAt);
+            const today = new Date();
+            
+            // Calculate difference in days
+            const diffTime = Math.abs(today.getTime() - proposalDate.getTime());
+            const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+            
+            if (diffDays > 2) {
+              priorityStatus = '🚨Entrar em contato';
+            } else {
+              priorityStatus = '⌛Aguardando Retorno';
+            }
+          }
+
+          // Salesperson Mapping
+          let mappedSalesperson = 'Jonathan';
+          const salespersonName = item["salesperson_name"] || item["Vendedor"] || item["vendedor"] || item["Vendedor."];
+          if (salespersonName === 'Administrador principal Indavent Exaustores') {
+            mappedSalesperson = 'Isabele';
+          } else if (salespersonName === 'Vendas') {
+            mappedSalesperson = 'Jonathan';
+          } else if (salespersonName) {
+            mappedSalesperson = salespersonName;
+          }
+          
+          if (mappedSalesperson === 'Jaquelina') mappedSalesperson = 'Jaqueline';
+
+          const phoneValue = item["Telefone"] || item["telefone"] || item["Phone"] || item["phone"];
+
+          return {
+            ...item,
+            id: item.id,
+            company: item["Nome"] || item["name"] || item["nome"] || "Sem Nome",
+            initials: (item["Nome"] || item["name"] || item["nome"] || "??").split(' ').map((n: string) => n[0]).join('').substring(0, 2),
+            address: item["Endereço"] || item["address"] || item["endereco"] || 'Endereço não informado',
+            city: item["Cidade"] || item["city"] || item["cidade"],
+            tags: (item["Tipo"] || item["type"] || item["tipo"]) ? [item["Tipo"] || item["type"] || item["tipo"]] : [],
+            source: item["Como conheceu?"] || item["source_details"] || item["source"] || item["origem"] || 'WhatsApp',
+            stage: item["Estágio"] || item["stage"] || item["estagio"] || 'Cadastrado',
+            salesperson: mappedSalesperson,
+            salespersonInitials: mappedSalesperson[0],
+            product: item["Produto"] || item["product"] || item["produto"] || 'Perfis de Drywall',
+            budget: (item["Orçamento"] || item["budget"] || item["orcamento"]) ? new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(Number(item["Orçamento"] || item["budget"] || item["orcamento"])) : 'R$ 0,00',
+            budgetValue: Number(item["Orçamento"] || item["budget"] || item["orcamento"]) || 0,
+            deliveryDeadline: item["Prazo de Entrega"] || item["delivery_deadline"] || item["prazo_entrega"] || 'N/A',
+            proposalDate: proposalSentAt ? new Date(proposalSentAt).toLocaleDateString('pt-BR') : 'N/A',
+            deadline: `${deadlineDays} dias`,
+            followUp: priorityStatus,
+            phone: phoneValue,
+            hasDocs: !!(item["Proposta"] || item["proposal"] || item["proposta"]),
+            proposalLink: item["Proposta"] || item["proposal"] || item["proposta"],
+            "Observações": item["Observações"] || item["observations"] || item["observacoes"] || "",
+            color: (item["Estágio"] || item["stage"] || item["estagio"]) === 'Cliente' ? 'emerald' : (item["Estágio"] || item["stage"] || item["estagio"]) === 'Perdido' ? 'rose' : 'blue',
+            priorityValue: priorityStatus === '🚨Entrar em contato' ? 1 : 2,
+            updatedAt: item.updated_at || item.created_at
+          };
+        });
+
+        formattedLeads.sort((a, b) => {
+          if (a.priorityValue !== b.priorityValue) {
+            return a.priorityValue - b.priorityValue;
+          }
+          return new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime();
+        });
+        
+        setLeads(formattedLeads);
+      }
+    } catch (err) {
+      console.error('Error fetching leads:', err);
+    } finally {
+      setIsLoading(false);
+    }
+  }, [user, profile, isAdmin, authLoading, router]);
+
+  React.useEffect(() => {
     fetchLeads();
     setMounted(true);
-  }, [user, profile, isAdmin, authLoading, router]);
+  }, [fetchLeads]);
 
   const handleCreateLead = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!supabase || !user) return;
+    if (!supabase || !user || isSaving) return;
+    setIsSaving(true);
     try {
       const dbData = mapFormDataToDb(formData);
       
       // Auto-assign salesperson if not admin
-      if (!isAdmin) {
-        (dbData as any).salesperson_id = user.id;
-        (dbData as any)["Vendedor"] = profile?.name || user.username;
+      if (!isAdmin && profile) {
+        dbData.salesperson_id = user.id;
+        dbData.salesperson_name = profile.name || user.username;
+        dbData.Vendedor = profile.name || user.username;
       }
       
-      const { data, error } = await supabase
+      const { error } = await supabase
         .from('leads')
-        .insert([dbData])
-        .select();
+        .insert([dbData]);
       
-      if (error) throw error;
-      window.location.reload();
+      if (error) {
+        console.error('Supabase insert error:', error);
+        throw error;
+      }
+      
+      setIsCreateModalOpen(false);
+      setFormData({
+        "Nome": "",
+        "Estágio": "Cadastrado",
+        "Data de Envio (Proposta-Follow Up))": "",
+        "Endereço": "",
+        "Vendedor": profile?.name || "",
+        "Responsável da Empresa": "",
+        "Como conheceu?": "",
+        "Cidade": "",
+        "Telefone": "",
+        "Tipo": "",
+        "Produto": "Perfis de Drywall",
+        "Orçamento": 0,
+        "Ultimo contato (Lead)": new Date().toISOString(),
+        "Observações": ""
+      });
+      
+      setIsSaving(false); // Reset saving state before refetching
+      await fetchLeads();
     } catch (err: any) {
       console.error('Error creating lead:', err.message || err);
       alert(`Erro ao criar lead: ${err.message || 'Verifique os dados e tente novamente.'}`);
+      setIsSaving(false);
+    } finally {
+      setIsSaving(false);
     }
   };
 
   const handleUpdateLead = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!supabase || !user) return;
+    if (!supabase || !user || !selectedLead || isSaving) return;
+    setIsSaving(true);
     try {
       const dbData = mapFormDataToDb(formData);
       
@@ -333,31 +441,45 @@ export default function LeadsPage() {
         .update(dbData)
         .eq('id', selectedLead.id);
       
-      if (error) throw error;
-      window.location.reload();
+      if (error) {
+        console.error('Supabase update error:', error);
+        throw error;
+      }
+      
+      setIsEditModalOpen(false);
+      setIsEditing(false);
+      setSelectedLead(null);
+      setIsSaving(false); // Reset saving state before refetching to avoid UI hang
+      
+      await fetchLeads();
     } catch (err: any) {
       console.error('Error updating lead:', err.message || err);
       alert(`Erro ao atualizar lead: ${err.message || 'Verifique os dados e tente novamente.'}`);
+      setIsSaving(false); // Ensure it's reset on error too
+    } finally {
+      // The finally block will catch anything else
+      setIsSaving(false);
     }
   };
 
   const openEditModal = (lead: any) => {
     setSelectedLead(lead);
     setFormData({
-      "Nome": lead["Nome"] || lead["name"] || "",
-      "Estágio": lead["Estágio"] || lead["stage"] || "Cadastrado",
-      "Data de Envio (Proposta-Follow Up))": lead["Data de Envio (Proposta-Follow Up))"] || lead["proposal_sent_at"] || "",
-      "Endereço": lead["Endereço"] || lead["address"] || "",
-      "Vendedor": lead["salesperson_name"] || lead["Vendedor"] || lead["salesperson_name"] || "Jonathan",
+      "Nome": lead.company || "",
+      "Estágio": lead.stage || "Cadastrado",
+      "Data de Envio (Proposta-Follow Up))": lead["Data de Envio (Proposta-Follow Up))"] || lead["proposal_sent_at"] || lead["data_envio"] || "",
+      "Endereço": lead.address || "",
+      "Vendedor": lead.salesperson || "Jonathan",
       "Responsável da Empresa": lead["Responsável da Empresa"] || lead["company_responsible"] || "",
-      "Como conheceu?": lead["Como conheceu?"] || lead["source_details"] || "",
-      "Cidade": lead["Cidade"] || lead["city"] || "",
-      "Telefone": lead["Telefone"] || lead["telefone"] || lead["Phone"] || lead["phone"] || "",
-      "Tipo": lead["Tipo"] || lead["lead_type"] || "",
-      "Produto": lead["Produto"] || lead["product"] || "Placas de Drywall",
-      "Orçamento": lead["Orçamento"] || lead["budget"] || 0,
-      "Ultimo contato (Lead)": lead["Ultimo contato (Lead)"] || lead["last_contact"] || new Date().toISOString(),
-      "Observações": lead["Observações"] || lead["observations"] || ""
+      "Origem do Lead": lead.source || "",
+      "Cidade": lead.city || "",
+      "Telefone": lead.phone || "",
+      "Tipo": lead.tags?.[0] || "",
+      "Produto": lead.product || "Perfis de Drywall",
+      "Orçamento": lead.budgetValue || 0,
+      "Ultimo contato (Lead)": lead["Ultimo contato (Lead)"] || lead["last_contact"] || lead["ultimo_contato"] || new Date().toISOString(),
+      "Observações": lead["Observações"] || "",
+      "Proposta": lead.proposalLink || ""
     });
     setIsEditModalOpen(true);
     setIsEditing(false); // Start in view mode
@@ -427,6 +549,24 @@ export default function LeadsPage() {
           .reduce((acc, curr) => acc + curr.budgetValue, 0);
       });
       return data;
+    });
+  }, [leads]);
+
+  const proposalsData = React.useMemo(() => {
+    const months = ['Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun', 'Jul', 'Ago', 'Set', 'Out', 'Nov', 'Dez'];
+    return months.map((month, i) => {
+      const filteredLeads = leads.filter(l => {
+        const date = new Date(l.updatedAt || l.created_at);
+        // Consider leads that are in "Proposta Solicitada" or beyond
+        const hasRequestedProposal = ['Proposta Solicitada', 'Fechamento', 'Cliente'].includes(l.stage);
+        return date.getMonth() === i && hasRequestedProposal;
+      });
+
+      return {
+        month,
+        count: filteredLeads.length,
+        value: filteredLeads.reduce((acc, curr) => acc + (curr.budgetValue || 0), 0)
+      };
     });
   }, [leads]);
 
@@ -759,9 +899,67 @@ export default function LeadsPage() {
                     <Tooltip 
                       contentStyle={{ backgroundColor: '#ffffff', border: '1px solid #e2e8f0', borderRadius: '12px' }}
                     />
-                    <Line type="monotone" dataKey="Placas de Drywall" stroke="#3b82f6" strokeWidth={4} dot={{ r: 4, fill: '#3b82f6', strokeWidth: 2, stroke: '#ffffff' }} activeDot={{ r: 6 }} />
-                    <Line type="monotone" dataKey="Exaustores Eólicos" stroke="#10b981" strokeWidth={4} dot={{ r: 4, fill: '#10b981', strokeWidth: 2, stroke: '#ffffff' }} activeDot={{ r: 6 }} />
+                    <Line type="monotone" dataKey="Perfis de Drywall" stroke="#3b82f6" strokeWidth={4} dot={{ r: 4, fill: '#3b82f6', strokeWidth: 2, stroke: '#ffffff' }} activeDot={{ r: 6 }} />
+                    <Line type="monotone" dataKey="Exaustor Eólico" stroke="#10b981" strokeWidth={4} dot={{ r: 4, fill: '#10b981', strokeWidth: 2, stroke: '#ffffff' }} activeDot={{ r: 6 }} />
                   </LineChart>
+                </ResponsiveContainer>
+              </div>
+            </div>
+
+            {/* Proposals Evolution Chart */}
+            <div className="bg-white border border-slate-200 rounded-2xl p-8 shadow-sm lg:col-span-2">
+              <div className="flex items-center justify-between mb-8">
+                <div className="flex items-center gap-3">
+                  <div className="p-2 bg-indigo-50 text-indigo-600 rounded-lg">
+                    <FileText size={20} />
+                  </div>
+                  <h3 className="text-lg font-black text-slate-900 uppercase tracking-tight">Evolução de Propostas</h3>
+                </div>
+                <div className="flex items-center gap-6">
+                  <div className="flex items-center gap-2">
+                    <div className="size-3 rounded-full bg-indigo-600"></div>
+                    <span className="text-[10px] font-black text-slate-500 uppercase tracking-widest">Valor (R$)</span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <div className="size-3 rounded-full bg-amber-500"></div>
+                    <span className="text-[10px] font-black text-slate-500 uppercase tracking-widest">Quantidade</span>
+                  </div>
+                </div>
+              </div>
+              <div className="h-80 w-full">
+                <ResponsiveContainer width="100%" height="100%">
+                  <BarChart data={proposalsData}>
+                    <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" vertical={false} />
+                    <XAxis 
+                      dataKey="month" 
+                      axisLine={false} 
+                      tickLine={false} 
+                      tick={{ fill: '#64748b', fontSize: 11, fontWeight: 'bold' }} 
+                    />
+                    <YAxis 
+                      yAxisId="left"
+                      axisLine={false} 
+                      tickLine={false} 
+                      tick={{ fill: '#64748b', fontSize: 10 }}
+                      tickFormatter={(v) => `R$${v/1000}k`}
+                    />
+                    <YAxis 
+                      yAxisId="right"
+                      orientation="right"
+                      axisLine={false} 
+                      tickLine={false} 
+                      tick={{ fill: '#64748b', fontSize: 10 }}
+                    />
+                    <Tooltip 
+                      contentStyle={{ backgroundColor: '#ffffff', border: '1px solid #e2e8f0', borderRadius: '12px' }}
+                      formatter={(value: any, name: any) => {
+                        if (name === 'value') return [new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(value), 'Valor Total'];
+                        return [value, 'Qtd. Propostas'];
+                      }}
+                    />
+                    <Bar yAxisId="left" dataKey="value" fill="#4f46e5" radius={[4, 4, 0, 0]} barSize={40} />
+                    <Line yAxisId="right" type="monotone" dataKey="count" stroke="#f59e0b" strokeWidth={3} dot={{ r: 4, fill: '#f59e0b' }} />
+                  </BarChart>
                 </ResponsiveContainer>
               </div>
             </div>
@@ -881,7 +1079,7 @@ export default function LeadsPage() {
                       </div>
                     </div>
 
-                    {/* Product & Source */}
+                    {/* Product & Source & Proposal */}
                     <div className="grid grid-cols-2 gap-8">
                       <div className="space-y-4">
                         <h4 className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400 border-b border-slate-100 pb-2">Produto de Interesse</h4>
@@ -900,6 +1098,29 @@ export default function LeadsPage() {
                           </div>
                           <p className="text-sm font-bold text-slate-700">{selectedLead?.source || "Direto"}</p>
                         </div>
+                      </div>
+                    </div>
+
+                    {/* Proposal */}
+                    <div className="space-y-4">
+                      <h4 className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400 border-b border-slate-100 pb-2">Proposta</h4>
+                      <div className="flex items-center gap-3">
+                        <div className="size-8 rounded-lg bg-slate-100 flex items-center justify-center text-slate-600">
+                          <FileText size={16} />
+                        </div>
+                        {selectedLead?.proposalLink || selectedLead?.Proposta ? (
+                          <a 
+                            href={selectedLead?.proposalLink || selectedLead?.Proposta} 
+                            target="_blank" 
+                            rel="noopener noreferrer"
+                            className="text-sm font-bold text-blue-600 hover:underline flex items-center gap-1"
+                          >
+                            Ver Proposta
+                            <ChevronRight size={14} />
+                          </a>
+                        ) : (
+                          <p className="text-sm font-bold text-slate-400">Nenhuma proposta anexada</p>
+                        )}
                       </div>
                     </div>
 
@@ -1045,12 +1266,12 @@ export default function LeadsPage() {
                         />
                       </div>
                       <div className="space-y-2">
-                        <label className="text-[10px] font-black uppercase tracking-widest text-slate-500">Como conheceu</label>
+                        <label className="text-[10px] font-black uppercase tracking-widest text-slate-500">Origem do Lead</label>
                         <input 
                           type="text" 
                           className="w-full bg-slate-50 border border-slate-200 rounded-xl py-3 px-4 text-sm text-slate-900 focus:ring-2 focus:ring-blue-600/50 focus:border-blue-600 outline-none transition-all"
-                          value={formData["Como conheceu?"]}
-                          onChange={(e) => setFormData({...formData, "Como conheceu?": e.target.value})}
+                          value={formData["Origem do Lead"]}
+                          onChange={(e) => setFormData({...formData, "Origem do Lead": e.target.value})}
                         />
                       </div>
                     </div>
@@ -1065,16 +1286,52 @@ export default function LeadsPage() {
                     </div>
                   </div>
 
-                  {/* Observations Section */}
+                  {/* Observations & Proposal Section */}
                   <div className="space-y-4 pt-4">
-                    <h4 className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400 border-b border-slate-100 pb-2">Observações</h4>
-                    <div className="space-y-2">
-                      <textarea 
-                        className="w-full bg-slate-50 border border-slate-200 rounded-xl py-3 px-4 text-sm text-slate-900 focus:ring-2 focus:ring-blue-600/50 focus:border-blue-600 outline-none transition-all min-h-[120px] resize-none"
-                        placeholder="Adicione observações importantes sobre este lead..."
-                        value={formData["Observações"]}
-                        onChange={(e) => setFormData({...formData, "Observações": e.target.value})}
-                      />
+                    <h4 className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400 border-b border-slate-100 pb-2">Observações e Proposta</h4>
+                    <div className="space-y-4">
+                      <div className="space-y-2">
+                        <label className="text-[10px] font-black uppercase tracking-widest text-slate-500">Observações</label>
+                        <textarea 
+                          className="w-full bg-slate-50 border border-slate-200 rounded-xl py-3 px-4 text-sm text-slate-900 focus:ring-2 focus:ring-blue-600/50 focus:border-blue-600 outline-none transition-all min-h-[120px] resize-none"
+                          placeholder="Adicione observações importantes sobre este lead..."
+                          value={formData["Observações"]}
+                          onChange={(e) => setFormData({...formData, "Observações": e.target.value})}
+                        />
+                      </div>
+                      
+                      <div className="space-y-2">
+                        <label className="text-[10px] font-black uppercase tracking-widest text-slate-500">Anexar Proposta (PDF/DOCX)</label>
+                        <div className="flex items-center gap-4">
+                          <div className="flex-1 relative">
+                            <input 
+                              type="text"
+                              placeholder="URL da proposta ou nome do arquivo"
+                              className="w-full bg-slate-50 border border-slate-200 rounded-xl py-3 px-4 text-sm text-slate-900 focus:ring-2 focus:ring-blue-600/50 focus:border-blue-600 outline-none transition-all"
+                              value={formData["Proposta"]}
+                              onChange={(e) => setFormData({...formData, "Proposta": e.target.value})}
+                            />
+                          </div>
+                          <label className="cursor-pointer bg-white border border-slate-200 hover:bg-slate-50 text-slate-600 px-4 py-3 rounded-xl text-sm font-bold transition-all flex items-center gap-2">
+                            <FileUp size={18} />
+                            <span>Upload</span>
+                            <input 
+                              type="file" 
+                              className="hidden" 
+                              accept=".pdf,.docx"
+                              onChange={(e) => {
+                                const file = e.target.files?.[0];
+                                if (file) {
+                                  // In a real app, we would upload to Supabase Storage here
+                                  // For now, we'll just simulate by setting the filename
+                                  setFormData({...formData, "Proposta": file.name});
+                                  alert(`Arquivo "${file.name}" selecionado. Em um ambiente real, este arquivo seria enviado para o servidor.`);
+                                }
+                              }}
+                            />
+                          </label>
+                        </div>
+                      </div>
                     </div>
                   </div>
 
@@ -1096,9 +1353,11 @@ export default function LeadsPage() {
                     <div className="pt-8 flex flex-col gap-3 sticky bottom-0 bg-white pb-4">
                       <button 
                         type="submit"
-                        className="w-full py-4 bg-blue-600 hover:bg-blue-700 text-white text-sm font-black uppercase tracking-widest rounded-xl transition-all shadow-lg shadow-blue-600/20 active:scale-[0.98]"
+                        disabled={isSaving}
+                        className="w-full py-4 bg-blue-600 hover:bg-blue-700 text-white text-sm font-black uppercase tracking-widest rounded-xl transition-all shadow-lg shadow-blue-600/20 active:scale-[0.98] disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
                       >
-                        {isCreateModalOpen ? "Criar Lead" : "Salvar Alterações"}
+                        {isSaving && <Loader2 className="animate-spin" size={18} />}
+                        {isSaving ? "Salvando..." : (isCreateModalOpen ? "Criar Lead" : "Salvar Alterações")}
                       </button>
                       <button 
                         type="button"
