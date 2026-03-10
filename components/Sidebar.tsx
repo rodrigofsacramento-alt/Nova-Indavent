@@ -35,6 +35,7 @@ export function Sidebar() {
   const pathname = usePathname();
   const router = useRouter();
   const { profile, isAdmin } = useAuth();
+  const [logoError, setLogoError] = React.useState(false);
 
   const handleLogout = () => {
     Cookies.remove('auth_session');
@@ -52,14 +53,19 @@ export function Sidebar() {
       <div className="p-6 flex flex-col h-full">
         {/* Brand */}
         <div className="flex flex-col gap-1 mb-8">
-          <div className="relative w-full h-12 mb-2">
-            <Image 
-              src="/logo.png" 
-              alt="Indavent Logo" 
-              fill 
-              className="object-contain object-left brightness-0 invert"
-              priority
-            />
+          <div className="relative w-full h-12 mb-2 flex items-center">
+            {!logoError ? (
+              <Image 
+                src="/logo.png" 
+                alt="Indavent Logo" 
+                fill 
+                className="object-contain object-left brightness-0 invert"
+                priority
+                onError={() => setLogoError(true)}
+              />
+            ) : (
+              <span className="text-xl font-black tracking-tighter text-white italic">NovaINDAVENT</span>
+            )}
           </div>
           <div className="h-[1px] w-full bg-slate-800 relative">
             <div className="absolute inset-0 bg-gradient-to-r from-blue-500 to-slate-400 opacity-50"></div>

@@ -13,6 +13,7 @@ export default function LoginPage() {
   const [password, setPassword] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState('');
+  const [logoError, setLogoError] = useState(false);
   const router = useRouter();
 
   // Check if already logged in
@@ -73,14 +74,21 @@ export default function LoginPage() {
         <div className="text-center space-y-6">
           <div className="flex justify-center">
             <div className="bg-white p-6 rounded-2xl shadow-2xl shadow-blue-600/10 border border-slate-200 flex flex-col items-center">
-              <div className="relative w-48 h-16">
-                <Image 
-                  src="/logo.png" 
-                  alt="Indavent Logo" 
-                  fill 
-                  className="object-contain"
-                  priority
-                />
+              <div className="relative w-48 h-16 flex items-center justify-center">
+                {!logoError ? (
+                  <Image 
+                    src="/logo.png" 
+                    alt="Indavent Logo" 
+                    fill 
+                    className="object-contain"
+                    priority
+                    onError={() => setLogoError(true)}
+                  />
+                ) : (
+                  <div className="flex flex-col items-center">
+                    <span className="text-2xl font-black tracking-tighter text-slate-900 italic">NovaINDAVENT</span>
+                  </div>
+                )}
               </div>
               <div className="w-full h-[2px] bg-slate-300 my-1 relative overflow-hidden">
                 <div className="absolute inset-0 bg-gradient-to-r from-blue-600 to-slate-700 opacity-30"></div>

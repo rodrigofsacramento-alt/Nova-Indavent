@@ -165,6 +165,8 @@ export default function LeadsPage() {
 
   const [isSaving, setIsSaving] = React.useState(false);
   const [dbColumns, setDbColumns] = React.useState<string[]>([]);
+  const [orcamentoColumns, setOrcamentoColumns] = React.useState<string[]>([]);
+  const [propostaColumns, setPropostaColumns] = React.useState<string[]>([]);
 
   // Helper to map UI form data to DB columns
   const mapFormDataToDb = (data: any): any => {
@@ -185,10 +187,11 @@ export default function LeadsPage() {
       "Endereço": data["Endereço"],
       "address": data["Endereço"],
       "endereco": data["Endereço"],
-      "Vendedor": data["Vendedor"],
-      "salesperson_name": data["Vendedor"],
-      "vendedor": data["Vendedor"],
-      "Vendedor.": data["Vendedor"],
+      "Vendedor": data["Vendedor"] || data["salesperson_name"],
+      "salesperson_name": data["Vendedor"] || data["salesperson_name"],
+      "vendedor": data["Vendedor"] || data["salesperson_name"],
+      "Vendedor.": data["Vendedor"] || data["salesperson_name"],
+      "salesperson_id": data["salesperson_id"] || null,
       "Responsável da Empresa": data["Responsável da Empresa"],
       "company_responsible": data["Responsável da Empresa"],
       "Como conheceu?": data["Origem do Lead"],
@@ -406,14 +409,25 @@ export default function LeadsPage() {
     if (!supabase || !user || isSaving) return;
     setIsSaving(true);
     try {
-      const dbData = mapFormDataToDb(formData);
+      const currentFormData = { ...formData };
       
       // Auto-assign salesperson if not admin
       if (!isAdmin && profile) {
-        dbData.salesperson_id = user.id;
-        dbData.salesperson_name = profile.name || user.username;
-        dbData.Vendedor = profile.name || user.username;
+        // Only assign salesperson_id if the user exists in the salespeople list
+        const isSalesperson = salespeople.some(s => s.id === user.id);
+        if (isSalesperson) {
+          currentFormData.salesperson_id = user.id;
+        }
+        currentFormData["Vendedor"] = profile.name || user.username;
+      } else if (isAdmin && currentFormData["Vendedor"]) {
+        // Find the ID of the selected salesperson for admins
+        const selectedSalesperson = salespeople.find(s => s.name === currentFormData["Vendedor"]);
+        if (selectedSalesperson) {
+          currentFormData.salesperson_id = selectedSalesperson.id;
+        }
       }
+      
+      const dbData = mapFormDataToDb(currentFormData);
       
       const { error } = await supabase
         .from('leads')
@@ -466,16 +480,24 @@ export default function LeadsPage() {
       const isProposalRequested = formData["Estágio"] === "Proposta Solicitada";
       const wasNotProposalRequested = selectedLead.stage !== "Proposta Solicitada";
 
-      const dbData = mapFormDataToDb(formData);
+      const currentFormData = { ...formData };
       
       // If admin changed the salesperson, we should try to update salesperson_id too
       if (isAdmin && formData["Vendedor"]) {
         const selectedSalesperson = salespeople.find(s => s.name === formData["Vendedor"]);
         if (selectedSalesperson) {
-          dbData.salesperson_id = selectedSalesperson.id;
+          currentFormData.salesperson_id = selectedSalesperson.id;
+        }
+      } else if (!isAdmin && profile) {
+        // Ensure current user is a valid salesperson before assigning ID
+        const isSalesperson = salespeople.some(s => s.id === user.id);
+        if (isSalesperson) {
+          currentFormData.salesperson_id = user.id;
         }
       }
 
+      const dbData = mapFormDataToDb(currentFormData);
+      
       const { error } = await supabase
         .from('leads')
         .update(dbData)
@@ -825,10 +847,14 @@ export default function LeadsPage() {
       };
 
       // 1. Save to orcamentos table
-      console.log('Detecting orcamentos columns...');
-      const { data: orcColsData } = await supabase.from('orcamentos').select('*').limit(1);
-      const orcCols = orcColsData && orcColsData.length > 0 ? Object.keys(orcColsData[0]) : [];
-      console.log('Detected orcamentos columns:', orcCols);
+      let orcCols = orcamentoColumns;
+      if (orcCols.length === 0) {
+        console.log('Detecting orcamentos columns...');
+        const { data: orcColsData } = await supabase.from('orcamentos').select('*').limit(1);
+        orcCols = orcColsData && orcColsData.length > 0 ? Object.keys(orcColsData[0]) : [];
+        setOrcamentoColumns(orcCols);
+      }
+      console.log('Using orcamentos columns:', orcCols);
 
       const orcamentoPayload: any = {
         lead_id: selectedLead.id,
@@ -866,9 +892,13 @@ export default function LeadsPage() {
       const proposalHtml = generateProposalHtml(proposalData, selectedLead);
 
       // 3. Save to propostas table
-      console.log('Detecting propostas columns...');
-      const { data: propColsData } = await supabase.from('propostas').select('*').limit(1);
-      const propCols = propColsData && propColsData.length > 0 ? Object.keys(propColsData[0]) : [];
+      let propCols = propostaColumns;
+      if (propCols.length === 0) {
+        console.log('Detecting propostas columns...');
+        const { data: propColsData } = await supabase.from('propostas').select('*').limit(1);
+        propCols = propColsData && propColsData.length > 0 ? Object.keys(propColsData[0]) : [];
+        setPropostaColumns(propCols);
+      }
       
       const propostaPayload: any = {
         lead_id: selectedLead.id,
