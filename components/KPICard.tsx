@@ -18,9 +18,10 @@ interface KPICardProps {
   trend?: 'up' | 'down';
   icon: React.ElementType;
   color?: string;
+  description?: string;
 }
 
-export function KPICard({ title, value, change, trend, icon: Icon, color = "blue" }: KPICardProps) {
+export function KPICard({ title, value, change, trend, icon: Icon, color = "blue", description }: KPICardProps) {
   const trendColor = trend === 'up' ? 'text-emerald-500' : 'text-rose-500';
   const TrendIcon = trend === 'up' ? ArrowUpRight : ArrowDownRight;
 
@@ -43,8 +44,9 @@ export function KPICard({ title, value, change, trend, icon: Icon, color = "blue
           </span>
         )}
       </div>
-      <p className="text-slate-500 text-sm font-medium">{title}</p>
-      <h3 className="text-2xl font-bold mt-1 text-slate-900">{value}</h3>
+      <p className="text-slate-500 text-xs font-bold uppercase tracking-widest mb-1">{title}</p>
+      <h3 className="text-2xl font-black text-slate-900">{value}</h3>
+      {description && <p className="text-[10px] text-slate-400 mt-2 font-medium">{description}</p>}
     </div>
   );
 }

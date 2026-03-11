@@ -13,13 +13,16 @@ export const metadata: Metadata = {
 };
 
 import { AuthGuard } from '@/components/AuthGuard';
+import { MobileMenuProvider } from '@/context/MobileMenuContext';
 
 export default function RootLayout({children}: {children: React.ReactNode}) {
   return (
     <html lang="pt-BR" className={`${inter.variable} dark`}>
       <body className="font-sans antialiased bg-slate-950 text-slate-100" suppressHydrationWarning>
         <AuthGuard>
-          {children}
+          <MobileMenuProvider>
+            {children}
+          </MobileMenuProvider>
         </AuthGuard>
       </body>
     </html>

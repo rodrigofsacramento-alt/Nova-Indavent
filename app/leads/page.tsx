@@ -113,6 +113,8 @@ export default function LeadsPage() {
   const [isDuplicateModalOpen, setIsDuplicateModalOpen] = React.useState(false);
   const [duplicatesFound, setDuplicatesFound] = React.useState<any[]>([]);
   const [selectedLead, setSelectedLead] = React.useState<any>(null);
+  const [attachments, setAttachments] = React.useState<any[]>([]);
+  const [isUploading, setIsUploading] = React.useState(false);
   
   // Budget Generator States
   const [isBudgetModalOpen, setIsBudgetModalOpen] = React.useState(false);
@@ -131,6 +133,8 @@ export default function LeadsPage() {
   const [productFilter, setProductFilter] = React.useState('Todos os Produtos');
   const [cityFilter, setCityFilter] = React.useState('Todas as Cidades');
   const [searchTerm, setSearchTerm] = React.useState('');
+  const [startDate, setStartDate] = React.useState('');
+  const [endDate, setEndDate] = React.useState('');
 
   // Form states
   const [formData, setFormData] = React.useState<any>({
@@ -273,6 +277,43 @@ export default function LeadsPage() {
     const allCities = leads.map(l => l.city).filter(Boolean);
     return ['Todas as Cidades', ...Array.from(new Set(allCities))];
   }, [leads]);
+
+  const logActivity = async (leadId: string, type: string, description: string) => {
+    if (!supabase || !user) return;
+    try {
+      await supabase.from('activities').insert({
+        lead_id: leadId,
+        user_id: user.id,
+        type,
+        description,
+        created_at: new Date().toISOString()
+      });
+    } catch (err) {
+      console.error('Error logging activity:', err);
+    }
+  };
+
+  const fetchAttachments = async (leadId: string) => {
+    if (!supabase) return;
+    try {
+      const { data, error } = await supabase
+        .from('lead_attachments')
+        .select('*')
+        .eq('lead_id', leadId)
+        .order('created_at', { ascending: false });
+      
+      if (error) {
+        if (error.code === '42P01') {
+          console.warn('Tabela lead_attachments não encontrada. Certifique-se de executar o SQL de migração.');
+          return;
+        }
+        throw error;
+      }
+      if (data) setAttachments(data);
+    } catch (err: any) {
+      console.error('Error fetching attachments:', err.message || err);
+    }
+  };
 
   const fetchLeads = React.useCallback(async () => {
     if (!supabase || !user) {
@@ -429,13 +470,18 @@ export default function LeadsPage() {
       
       const dbData = mapFormDataToDb(currentFormData);
       
-      const { error } = await supabase
+      const { data, error } = await supabase
         .from('leads')
-        .insert([dbData]);
+        .insert([dbData])
+        .select();
       
       if (error) {
         console.error('Supabase insert error:', error);
         throw error;
+      }
+
+      if (data && data[0]) {
+        await logActivity(data[0].id, 'Update', `Novo lead cadastrado: ${currentFormData["Nome"]}`);
       }
       
       setIsCreateModalOpen(false);
@@ -508,6 +554,13 @@ export default function LeadsPage() {
         throw error;
       }
 
+      // Log activity
+      if (selectedLead.stage !== formData["Estágio"]) {
+        await logActivity(selectedLead.id, 'Update', `Estágio alterado para: ${formData["Estágio"]}`);
+      } else {
+        await logActivity(selectedLead.id, 'Update', `Dados do lead atualizados`);
+      }
+
       // Trigger budget generator if conditions met
       const shouldOpenBudget = isDrywall && isProposalRequested && wasNotProposalRequested;
       
@@ -543,8 +596,103 @@ export default function LeadsPage() {
     }
   };
 
+  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>, type: string = 'manual') => {
+    const file = e.target.files?.[0];
+    if (!file || !selectedLead || !supabase) return;
+
+    setIsUploading(true);
+    try {
+      // 1. Upload to Supabase Storage
+      const fileExt = file.name.split('.').pop();
+      const fileName = `${selectedLead.id}/${Date.now()}.${fileExt}`;
+      const filePath = `proposals/${fileName}`;
+
+      const { error: uploadError } = await supabase.storage
+        .from('leads')
+        .upload(filePath, file);
+
+      if (uploadError) {
+        console.error('Upload error details:', uploadError);
+        if (uploadError.message?.toLowerCase().includes('bucket not found') || (uploadError as any).error === 'Bucket not found') {
+          throw new Error('O bucket "leads" não foi encontrado no Supabase Storage. Por favor, crie um bucket PÚBLICO chamado "leads" no painel do Supabase.');
+        }
+        throw uploadError;
+      }
+
+      // 2. Get Public URL
+      const { data: { publicUrl } } = supabase.storage
+        .from('leads')
+        .getPublicUrl(filePath);
+
+      // 3. Save to lead_attachments table
+      const { error: dbError } = await supabase
+        .from('lead_attachments')
+        .insert({
+          lead_id: selectedLead.id,
+          name: file.name,
+          file_url: publicUrl,
+          file_type: type
+        });
+
+      if (dbError) throw dbError;
+
+      // 4. Refresh attachments
+      fetchAttachments(selectedLead.id);
+      await logActivity(selectedLead.id, 'Update', `${type === 'orcamento' ? 'Orçamento' : 'Arquivo'} anexado: ${file.name}`);
+      alert('Arquivo enviado com sucesso!');
+    } catch (err: any) {
+      console.error('Error uploading file:', err);
+      alert(`Erro ao fazer upload: ${err.message}`);
+    } finally {
+      setIsUploading(false);
+      // Reset input
+      e.target.value = '';
+    }
+  };
+
+  const handleDeleteAttachment = async (attachmentId: string, fileName: string) => {
+    if (!supabase || !confirm(`Tem certeza que deseja excluir o anexo "${fileName}"?`)) return;
+
+    try {
+      const { error } = await supabase
+        .from('lead_attachments')
+        .delete()
+        .eq('id', attachmentId);
+
+      if (error) throw error;
+
+      setAttachments(prev => prev.filter(a => a.id !== attachmentId));
+      await logActivity(selectedLead.id, 'Update', `Arquivo removido: ${fileName}`);
+    } catch (err: any) {
+      console.error('Error deleting attachment:', err);
+      alert(`Erro ao excluir anexo: ${err.message}`);
+    }
+  };
+
+  const handleDeleteLead = async (id: string) => {
+    if (!supabase || !confirm('Tem certeza que deseja excluir este lead?')) return;
+    
+    try {
+      const { error } = await supabase
+        .from('leads')
+        .delete()
+        .eq('id', id);
+      
+      if (error) throw error;
+      
+      setLeads(prev => prev.filter(l => l.id !== id));
+      setIsEditModalOpen(false);
+      setSelectedLead(null);
+    } catch (err: any) {
+      console.error('Error deleting lead:', err);
+      alert(`Erro ao excluir lead: ${err.message}`);
+    }
+  };
+
   const openEditModal = (lead: any) => {
     setSelectedLead(lead);
+    setAttachments([]); // Clear previous attachments
+    fetchAttachments(lead.id);
     setFormData({
       "Nome": lead.company || "",
       "Estágio": lead.stage || "Cadastrado",
@@ -962,6 +1110,21 @@ export default function LeadsPage() {
       }
 
       setLastGeneratedProposal(proposalData);
+      
+      // Also save to lead_attachments for the new multi-document feature
+      if (supabase) {
+        await supabase.from('lead_attachments').insert({
+          lead_id: selectedLead.id,
+          name: `Proposta_${new Date().toLocaleDateString('pt-BR').replace(/\//g, '-')}.html`,
+          file_url: '#', // For generated HTML we might need a different approach if we want to download it, 
+                         // but for now we'll just record that it was generated.
+                         // Actually, we could store the ID of the proposal record.
+          file_type: 'proposta'
+        });
+      }
+
+      await logActivity(selectedLead.id, 'Message', `Proposta gerada: R$ ${totalProposal.toLocaleString('pt-BR')}`);
+      fetchAttachments(selectedLead.id);
       alert('Orçamento e Proposta salvos com sucesso no banco de dados!');
       setIsBudgetModalOpen(false);
       setIsFinalProposalOpen(true);
@@ -995,7 +1158,12 @@ export default function LeadsPage() {
     const matchesSearch = (lead.company || "").toLowerCase().includes(searchTerm.toLowerCase()) || 
                          (lead.phone && lead.phone.includes(searchTerm));
     
-    return matchesStage && matchesSalesperson && matchesProduct && matchesCity && matchesSearch;
+    // Date filtering
+    const leadDate = new Date(lead.created_at);
+    const matchesStartDate = !startDate || leadDate >= new Date(startDate);
+    const matchesEndDate = !endDate || leadDate <= new Date(endDate + 'T23:59:59');
+    
+    return matchesStage && matchesSalesperson && matchesProduct && matchesCity && matchesSearch && matchesStartDate && matchesEndDate;
   });
 
   const displayedLeads = showAllLeads ? filteredLeads : filteredLeads.slice(0, 50);
@@ -1003,30 +1171,30 @@ export default function LeadsPage() {
   return (
     <div className="flex min-h-screen bg-white font-sans selection:bg-blue-500/30">
       <Sidebar />
-      <main className="flex-1 flex flex-col min-w-0">
-        <TopBar />
+      <main className="flex-1 flex flex-col min-w-0 overflow-x-hidden">
+        <TopBar title="Leads" />
         
-        <div className="p-8 space-y-8 overflow-y-auto bg-white">
+        <div className="p-4 sm:p-8 space-y-6 sm:space-y-8 overflow-y-auto bg-white">
           {/* Header Section */}
           <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-6">
             <div>
-              <h2 className="text-3xl font-black tracking-tight text-slate-900">Leads</h2>
-              <p className="text-slate-500 text-sm mt-1">Gerencie seu pipeline de vendas e acompanhe o progresso dos seus negócios.</p>
+              <h2 className="text-2xl sm:text-3xl font-black tracking-tight text-slate-900">Leads</h2>
+              <p className="text-slate-500 text-xs sm:text-sm mt-1">Gerencie seu pipeline de vendas e acompanhe o progresso.</p>
             </div>
-            <div className="flex items-center gap-3">
+            <div className="flex flex-wrap items-center gap-3">
               <button 
                 onClick={detectDuplicates}
-                className="flex items-center gap-2 px-6 py-3 bg-slate-100 text-slate-600 rounded-xl text-sm font-bold hover:bg-slate-200 transition-all active:scale-95"
+                className="flex-1 sm:flex-none flex items-center justify-center gap-2 px-4 sm:px-6 py-3 bg-slate-100 text-slate-600 rounded-xl text-xs sm:text-sm font-bold hover:bg-slate-200 transition-all active:scale-95"
               >
-                <Copy size={20} />
-                Detectar Duplicados
+                <Copy size={18} />
+                Duplicados
               </button>
               <button 
                 onClick={() => setIsCreateModalOpen(true)}
-                className="flex items-center gap-2 px-6 py-3 bg-blue-600 text-white rounded-xl text-sm font-bold hover:bg-blue-700 transition-all active:scale-95 shadow-lg shadow-blue-600/20"
+                className="flex-1 sm:flex-none flex items-center justify-center gap-2 px-4 sm:px-6 py-3 bg-blue-600 text-white rounded-xl text-xs sm:text-sm font-bold hover:bg-blue-700 transition-all active:scale-95 shadow-lg shadow-blue-600/20"
               >
-                <Plus size={20} />
-                Cadastrar Lead
+                <Plus size={18} />
+                Novo Lead
               </button>
             </div>
           </div>
@@ -1092,12 +1260,33 @@ export default function LeadsPage() {
                 <ChevronDown className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" size={16} />
               </div>
             </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div className="relative">
+                <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 mb-1 block ml-1">Data Inicial</label>
+                <input 
+                  type="date" 
+                  className="w-full bg-white border border-slate-200 rounded-xl py-3 px-4 text-sm text-slate-700 focus:ring-2 focus:ring-blue-600/50 focus:border-blue-600 outline-none transition-all shadow-sm"
+                  value={startDate}
+                  onChange={(e) => setStartDate(e.target.value)}
+                />
+              </div>
+              <div className="relative">
+                <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 mb-1 block ml-1">Data Final</label>
+                <input 
+                  type="date" 
+                  className="w-full bg-white border border-slate-200 rounded-xl py-3 px-4 text-sm text-slate-700 focus:ring-2 focus:ring-blue-600/50 focus:border-blue-600 outline-none transition-all shadow-sm"
+                  value={endDate}
+                  onChange={(e) => setEndDate(e.target.value)}
+                />
+              </div>
+            </div>
           </div>
 
           {/* Leads Table */}
           <div className="bg-white border border-slate-200 rounded-2xl overflow-hidden shadow-sm">
-            <div className="overflow-x-auto">
-              <table className="w-full text-left border-collapse">
+            <div className="overflow-x-auto custom-scrollbar">
+              <table className="w-full text-left border-collapse min-w-[1000px]">
                 <thead>
                   <tr className="bg-slate-50 text-[11px] font-black uppercase tracking-widest text-slate-500 border-b border-slate-200">
                     <th className="px-6 py-5">Lead / Empresa</th>
@@ -1220,9 +1409,21 @@ export default function LeadsPage() {
                         </button>
                       </td>
                       <td className="px-6 py-5 text-right">
-                        <button className="p-2 hover:bg-slate-100 rounded-lg transition-colors text-slate-400 group-hover:text-slate-600">
-                          <MoreVertical size={18} />
-                        </button>
+                        <div className="flex items-center justify-end gap-2">
+                          <button 
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleDeleteLead(lead.id);
+                            }}
+                            className="p-2 hover:bg-rose-50 rounded-lg transition-colors text-slate-400 hover:text-rose-600"
+                            title="Excluir Lead"
+                          >
+                            <Trash2 size={18} />
+                          </button>
+                          <button className="p-2 hover:bg-slate-100 rounded-lg transition-colors text-slate-400 group-hover:text-slate-600">
+                            <MoreVertical size={18} />
+                          </button>
+                        </div>
                       </td>
                     </tr>
                   ))}
@@ -1426,13 +1627,22 @@ export default function LeadsPage() {
                 </div>
                 <div className="flex items-center gap-2">
                   {!isCreateModalOpen && !isEditing && (
-                    <button 
-                      onClick={() => setIsEditing(true)}
-                      className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-xl text-xs font-black uppercase tracking-widest hover:bg-blue-700 transition-all shadow-lg shadow-blue-600/20"
-                    >
-                      <Edit3 size={14} />
-                      Editar
-                    </button>
+                    <>
+                      <button 
+                        onClick={() => handleDeleteLead(selectedLead.id)}
+                        className="p-2 hover:bg-rose-50 rounded-xl text-rose-500 transition-colors border border-transparent hover:border-rose-100"
+                        title="Excluir Lead"
+                      >
+                        <Trash2 size={20} />
+                      </button>
+                      <button 
+                        onClick={() => setIsEditing(true)}
+                        className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-xl text-xs font-black uppercase tracking-widest hover:bg-blue-700 transition-all shadow-lg shadow-blue-600/20"
+                      >
+                        <Edit3 size={14} />
+                        Editar
+                      </button>
+                    </>
                   )}
                   <button 
                     onClick={() => {
@@ -1576,27 +1786,41 @@ export default function LeadsPage() {
                       </div>
                     </div>
 
-                    {/* Proposal */}
+                    {/* Documentos e Propostas */}
                     <div className="space-y-4">
-                      <h4 className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400 border-b border-slate-100 pb-2">Proposta</h4>
-                      <div className="flex items-center gap-3">
-                        <div className="size-8 rounded-lg bg-slate-100 flex items-center justify-center text-slate-600">
-                          <FileText size={16} />
+                      <h4 className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400 border-b border-slate-100 pb-2">Documentos e Propostas</h4>
+                      {attachments.length > 0 ? (
+                        <div className="space-y-2">
+                          {attachments.map((file) => (
+                            <div key={file.id} className="flex items-center justify-between p-3 bg-slate-50 border border-slate-200 rounded-xl group hover:border-blue-200 transition-all">
+                              <div className="flex items-center gap-3 min-w-0">
+                                <div className="size-8 rounded-lg bg-white border border-slate-200 flex items-center justify-center text-slate-400">
+                                  <FileText size={16} />
+                                </div>
+                                <div className="min-w-0">
+                                  <p className="text-xs font-bold text-slate-700 truncate">{file.name}</p>
+                                  <p className="text-[10px] text-slate-400 uppercase font-black tracking-widest">
+                                    {file.file_type === 'proposta' ? 'Proposta' : file.file_type === 'orcamento' ? 'Orçamento' : 'Arquivo'} • {new Date(file.created_at).toLocaleDateString('pt-BR')}
+                                  </p>
+                                </div>
+                              </div>
+                              <a 
+                                href={file.file_url} 
+                                target="_blank" 
+                                rel="noopener noreferrer"
+                                className="p-2 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-all"
+                              >
+                                <ChevronRight size={18} />
+                              </a>
+                            </div>
+                          ))}
                         </div>
-                        {selectedLead?.proposalLink || selectedLead?.Proposta ? (
-                          <a 
-                            href={selectedLead?.proposalLink || selectedLead?.Proposta} 
-                            target="_blank" 
-                            rel="noopener noreferrer"
-                            className="text-sm font-bold text-blue-600 hover:underline flex items-center gap-1"
-                          >
-                            Ver Proposta
-                            <ChevronRight size={14} />
-                          </a>
-                        ) : (
-                          <p className="text-sm font-bold text-slate-400">Nenhuma proposta anexada</p>
-                        )}
-                      </div>
+                      ) : (
+                        <div className="flex items-center gap-3 text-slate-400 italic">
+                          <FileText size={16} />
+                          <p className="text-sm">Nenhuma proposta ou orçamento anexado</p>
+                        </div>
+                      )}
                     </div>
 
                     {/* Observations */}
@@ -1795,37 +2019,83 @@ export default function LeadsPage() {
                         />
                       </div>
                       
-                      <div className="space-y-2">
-                        <label className="text-[10px] font-black uppercase tracking-widest text-slate-500">Anexar Proposta (PDF/DOCX)</label>
-                        <div className="flex items-center gap-4">
-                          <div className="flex-1 relative">
-                            <input 
-                              type="text"
-                              placeholder="URL da proposta ou nome do arquivo"
-                              className="w-full bg-slate-50 border border-slate-200 rounded-xl py-3 px-4 text-sm text-slate-900 focus:ring-2 focus:ring-blue-600/50 focus:border-blue-600 outline-none transition-all"
-                              value={formData["Proposta"]}
-                              onChange={(e) => setFormData({...formData, "Proposta": e.target.value})}
-                            />
+                      <div className="space-y-3">
+                        <div className="flex items-center justify-between">
+                          <label className="text-[10px] font-black uppercase tracking-widest text-slate-500">Documentos e Propostas</label>
+                          <div className="flex gap-2">
+                            <label className={cn(
+                              "cursor-pointer bg-blue-50 hover:bg-blue-100 text-blue-600 px-3 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-widest transition-all flex items-center gap-2",
+                              isUploading && "opacity-50 cursor-not-allowed"
+                            )}>
+                              {isUploading ? <Loader2 size={14} className="animate-spin" /> : <Plus size={14} />}
+                              <span>Proposta</span>
+                              <input 
+                                type="file" 
+                                className="hidden" 
+                                accept=".pdf,.docx,.jpg,.png"
+                                disabled={isUploading}
+                                onChange={(e) => handleFileUpload(e, 'proposta')}
+                              />
+                            </label>
+                            <label className={cn(
+                              "cursor-pointer bg-emerald-50 hover:bg-emerald-100 text-emerald-600 px-3 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-widest transition-all flex items-center gap-2",
+                              isUploading && "opacity-50 cursor-not-allowed"
+                            )}>
+                              {isUploading ? <Loader2 size={14} className="animate-spin" /> : <Plus size={14} />}
+                              <span>Orçamento</span>
+                              <input 
+                                type="file" 
+                                className="hidden" 
+                                accept=".pdf,.docx,.jpg,.png"
+                                disabled={isUploading}
+                                onChange={(e) => handleFileUpload(e, 'orcamento')}
+                              />
+                            </label>
                           </div>
-                          <label className="cursor-pointer bg-white border border-slate-200 hover:bg-slate-50 text-slate-600 px-4 py-3 rounded-xl text-sm font-bold transition-all flex items-center gap-2">
-                            <FileUp size={18} />
-                            <span>Upload</span>
-                            <input 
-                              type="file" 
-                              className="hidden" 
-                              accept=".pdf,.docx"
-                              onChange={(e) => {
-                                const file = e.target.files?.[0];
-                                if (file) {
-                                  // In a real app, we would upload to Supabase Storage here
-                                  // For now, we'll just simulate by setting the filename
-                                  setFormData({...formData, "Proposta": file.name});
-                                  alert(`Arquivo "${file.name}" selecionado. Em um ambiente real, este arquivo seria enviado para o servidor.`);
-                                }
-                              }}
-                            />
-                          </label>
                         </div>
+
+                        {attachments.length > 0 ? (
+                          <div className="space-y-2">
+                            {attachments.map((file) => (
+                              <div key={file.id} className="flex items-center justify-between p-3 bg-slate-50 border border-slate-200 rounded-xl group hover:border-blue-200 transition-all">
+                                <div className="flex items-center gap-3 min-w-0">
+                                  <div className="size-8 rounded-lg bg-white border border-slate-200 flex items-center justify-center text-slate-400">
+                                    <FileText size={16} />
+                                  </div>
+                                  <div className="min-w-0">
+                                    <p className="text-xs font-bold text-slate-700 truncate">{file.name}</p>
+                                    <p className="text-[10px] text-slate-400 uppercase font-black tracking-widest">
+                                      {file.file_type === 'proposta' ? 'Proposta' : file.file_type === 'orcamento' ? 'Orçamento' : 'Arquivo'} • {new Date(file.created_at).toLocaleDateString('pt-BR')}
+                                    </p>
+                                  </div>
+                                </div>
+                                <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-all">
+                                  <a 
+                                    href={file.file_url} 
+                                    target="_blank" 
+                                    rel="noopener noreferrer"
+                                    className="p-2 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-all"
+                                    title="Visualizar"
+                                  >
+                                    <ChevronRight size={18} />
+                                  </a>
+                                  <button 
+                                    onClick={() => handleDeleteAttachment(file.id, file.name)}
+                                    className="p-2 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-all"
+                                    title="Excluir"
+                                  >
+                                    <Trash2 size={16} />
+                                  </button>
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        ) : (
+                          <div className="p-8 border-2 border-dashed border-slate-200 rounded-2xl text-center">
+                            <FileUp size={24} className="mx-auto text-slate-300 mb-2" />
+                            <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Nenhum documento anexado</p>
+                          </div>
+                        )}
                       </div>
                     </div>
                   </div>
