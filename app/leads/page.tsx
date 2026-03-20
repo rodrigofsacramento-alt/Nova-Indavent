@@ -97,6 +97,21 @@ const DRYWALL_PRICE_TABLE = [
   { id: 7, name: 'TAB20CN - CANTONEIRA 25x30', price: 7.50 },
 ];
 
+const EXAUSTOR_PRICE_TABLE = [
+  { id: 101, name: 'Exaustor Residencial Cliente - Montado', price: 300.00 },
+  { id: 102, name: 'Exaustor Residencial Cliente - Desmontado', price: 280.00 },
+  { id: 103, name: 'Exaustor Residencial Cliente - Desmontado/embalado', price: 350.00 },
+  { id: 104, name: 'Exaustor Residencial Cliente Final - Montado', price: 350.00 },
+  { id: 105, name: 'Exaustor Residencial Cliente Final - Desmontado', price: 330.00 },
+  { id: 106, name: 'Exaustor Residencial Cliente Final - Desmontado/embalado', price: 400.00 },
+  { id: 107, name: 'Exaustor Industrial Cliente - Montado', price: 280.00 },
+  { id: 108, name: 'Exaustor Industrial Cliente - Desmontado', price: 265.00 },
+  { id: 109, name: 'Exaustor Industrial Cliente - Desmontado/embalado', price: 300.00 },
+  { id: 110, name: 'Exaustor Industrial Cliente Final - Montado', price: 330.00 },
+  { id: 111, name: 'Exaustor Industrial Cliente Final - Desmontado', price: 310.00 },
+  { id: 112, name: 'Exaustor Industrial Cliente Final - Desmontado/embalado', price: 350.00 },
+];
+
 export default function LeadsPage() {
   const { user, profile, loading: authLoading, isAdmin } = useAuth();
   const router = useRouter();
@@ -111,6 +126,8 @@ export default function LeadsPage() {
   const [isEditModalOpen, setIsEditModalOpen] = React.useState(false);
   const [isEditing, setIsEditing] = React.useState(false);
   const [isDuplicateModalOpen, setIsDuplicateModalOpen] = React.useState(false);
+  const [isDeleteConfirmOpen, setIsDeleteConfirmOpen] = React.useState(false);
+  const [leadToDelete, setLeadToDelete] = React.useState<string | null>(null);
   const [duplicatesFound, setDuplicatesFound] = React.useState<any[]>([]);
   const [selectedLead, setSelectedLead] = React.useState<any>(null);
   const [attachments, setAttachments] = React.useState<any[]>([]);
@@ -152,7 +169,8 @@ export default function LeadsPage() {
     "Orçamento": 0,
     "Ultimo contato (Lead)": new Date().toISOString(),
     "Observações": "",
-    "Proposta": ""
+    "Proposta": "",
+    "proposals": []
   });
 
   // Set default salesperson when profile is loaded
@@ -228,6 +246,9 @@ export default function LeadsPage() {
       "Proposta": data["Proposta"],
       "proposal": data["Proposta"],
       "proposta": data["Proposta"],
+      "proposals": data["proposals"] || [],
+      "total_sold_value": (data["proposals"] || []).filter((p: any) => p.status === 'ganho').reduce((acc: number, curr: any) => acc + Number(curr.value), 0),
+      "total_proposed_value": (data["proposals"] || []).filter((p: any) => p.status === 'pendente').reduce((acc: number, curr: any) => acc + Number(curr.value), 0),
       "CNPJ": data["CNPJ"],
       "cnpj": data["CNPJ"],
       "Email": data["Email"],
@@ -317,7 +338,7 @@ export default function LeadsPage() {
 
   const fetchLeads = React.useCallback(async () => {
     if (!supabase || !user) {
-      if (!authLoading && !user) router.push('/');
+      // if (!authLoading && !user) router.push('/');
       console.warn('Supabase is not configured or user not logged in');
       setIsLoading(false);
       return;
@@ -336,7 +357,11 @@ export default function LeadsPage() {
       let query = supabase.from('leads').select('*');
       
       if (!isAdmin && profile) {
-        query = query.eq('salesperson_name', profile.name);
+        // Tenta filtrar por ID ou por nome (Vendedor), incluindo nomes legados
+        const filter = [`salesperson_id.eq.${profile.id}`, `Vendedor.eq."${profile.name}"`];
+        if (profile.name === 'Jonathan') filter.push('Vendedor.eq."Vendas"');
+        if (profile.name === 'Isabele') filter.push('Vendedor.eq."Administrador principal Indavent Exaustores"');
+        query = query.or(filter.join(','));
       }
 
       const { data, error } = await query;
@@ -417,6 +442,9 @@ export default function LeadsPage() {
             cep: item["CEP"] || item["cep"] || "",
             hasDocs: !!(item["Proposta"] || item["proposal"] || item["proposta"]),
             proposalLink: item["Proposta"] || item["proposal"] || item["proposta"],
+            proposals: item["proposals"] || [],
+            totalSoldValue: item["total_sold_value"] || 0,
+            totalProposedValue: item["total_proposed_value"] || 0,
             "Observações": item["Observações"] || item["observations"] || item["observacoes"] || "",
             color: (item["Estágio"] || item["stage"] || item["estagio"]) === 'Cliente' ? 'emerald' : (item["Estágio"] || item["stage"] || item["estagio"]) === 'Perdido' ? 'rose' : 'blue',
             priorityValue: priorityStatus === '🚨Entrar em contato' ? 1 : 2,
@@ -562,19 +590,44 @@ export default function LeadsPage() {
       }
 
       // Trigger budget generator if conditions met
-      const shouldOpenBudget = isDrywall && isProposalRequested && wasNotProposalRequested;
+      const isExaustor = formData["Produto"] === "Exaustor Eólico";
+      // Trigger if stage is "Proposta Solicitada", regardless of previous stage
+      const shouldOpenBudget = (isDrywall || isExaustor) && isProposalRequested;
       
       if (shouldOpenBudget) {
         setIsBudgetModalOpen(true);
-        // Initialize with default items
-        setProposalItems([{ ...DRYWALL_PRICE_TABLE[0], quantity: 10 }]);
+        // Initialize with default items if none exist or if it's a new request
+        if (isDrywall) {
+          setProposalItems([{ ...DRYWALL_PRICE_TABLE[0], quantity: 10 }]);
+          setProposalNotes(`Proposta para fornecimento de perfis de drywall conforme solicitado por ${formData["Nome"]}.\n\n- ENTREGA A COMBINAR\n- EMITIR NOTA FISCAL: NÃO`);
+        } else {
+          setProposalItems([{ ...EXAUSTOR_PRICE_TABLE[0], quantity: 1 }]);
+          setProposalNotes(`Proposta para fornecimento de exaustores eólicos conforme solicitado por ${formData["Nome"]}.\n\n- ENTREGA A COMBINAR\n- EMITIR NOTA FISCAL: NÃO`);
+        }
         setFreightCost(0);
-        setProposalNotes(`Proposta para fornecimento de perfis de drywall conforme solicitado por ${formData["Nome"]}.`);
         setPaymentMethod('CHEQUE 30/60/90');
         setDeliveryDeadline('15 dias');
         setValidityDate(new Date(Date.now() + 10 * 24 * 60 * 60 * 1000).toISOString().split('T')[0]);
       }
       
+      // Update selectedLead state with the new data so saveGeneratedProposal has access to it
+      if (selectedLead) {
+        const updatedLead = {
+          ...selectedLead,
+          company: formData["Nome"],
+          stage: formData["Estágio"],
+          address: formData["Endereço"],
+          phone: formData["Telefone"],
+          product: formData["Produto"],
+          budgetValue: Number(formData["Orçamento"]),
+          cnpj: formData["CNPJ"],
+          email: formData["Email"],
+          cep: formData["CEP"],
+          "Responsável da Empresa": formData["Responsável da Empresa"]
+        };
+        setSelectedLead(updatedLead);
+      }
+
       setIsEditModalOpen(false);
       setIsEditing(false);
       
@@ -670,22 +723,35 @@ export default function LeadsPage() {
   };
 
   const handleDeleteLead = async (id: string) => {
-    if (!supabase || !confirm('Tem certeza que deseja excluir este lead?')) return;
+    setLeadToDelete(id);
+    setIsDeleteConfirmOpen(true);
+  };
+
+  const confirmDeleteLead = async () => {
+    if (!supabase || !leadToDelete) return;
     
+    setIsSaving(true);
     try {
       const { error } = await supabase
         .from('leads')
         .delete()
-        .eq('id', id);
+        .eq('id', leadToDelete);
       
       if (error) throw error;
       
-      setLeads(prev => prev.filter(l => l.id !== id));
+      // Log activity for lead deletion
+      await logActivity(leadToDelete, 'Delete', `Lead excluído`);
+      
+      setLeads(prev => prev.filter(l => l.id !== leadToDelete));
       setIsEditModalOpen(false);
       setSelectedLead(null);
+      setIsDeleteConfirmOpen(false);
+      setLeadToDelete(null);
     } catch (err: any) {
       console.error('Error deleting lead:', err);
       alert(`Erro ao excluir lead: ${err.message}`);
+    } finally {
+      setIsSaving(false);
     }
   };
 
@@ -709,6 +775,7 @@ export default function LeadsPage() {
       "Ultimo contato (Lead)": lead["Ultimo contato (Lead)"] || lead["last_contact"] || lead["ultimo_contato"] || new Date().toISOString(),
       "Observações": lead["Observações"] || "",
       "Proposta": lead.proposalLink || "",
+      "proposals": lead.proposals || [],
       "CNPJ": lead.cnpj || "",
       "Email": lead.email || "",
       "CEP": lead.cep || ""
@@ -810,7 +877,7 @@ export default function LeadsPage() {
       <tr style="border-bottom: 1px solid #f1f5f9;">
         <td style="padding: 8px;">${item.quantity}</td>
         <td style="padding: 8px; font-weight: bold; text-transform: uppercase;">${item.name}</td>
-        <td style="padding: 8px; color: #64748b; font-style: italic;">Material para Drywall</td>
+        <td style="padding: 8px; color: #64748b; font-style: italic;">${lead.product === 'Exaustor Eólico' ? 'Exaustor Eólico' : 'Material para Drywall'}</td>
         <td style="padding: 8px; text-align: right;">${new Intl.NumberFormat('pt-BR', { minimumFractionDigits: 2 }).format(item.price)}</td>
         <td style="padding: 8px; text-align: right; font-weight: bold;">${new Intl.NumberFormat('pt-BR', { minimumFractionDigits: 2 }).format(item.price * item.quantity)}</td>
       </tr>
@@ -931,18 +998,27 @@ export default function LeadsPage() {
     try {
       console.log('Saving proposal for lead:', selectedLead.id);
 
-      // Validation
-      if (!selectedLead.cnpj || selectedLead.cnpj.trim() === '') {
+      // Validation - Use formData if available as it's the most recent
+      const cnpj = formData["CNPJ"] || selectedLead.cnpj;
+      const address = formData["Endereço"] || selectedLead.address;
+      const cep = formData["CEP"] || selectedLead.cep;
+      const company = formData["Nome"] || selectedLead.company;
+      const city = formData["Cidade"] || selectedLead.city;
+      const phone = formData["Telefone"] || selectedLead.phone;
+      const email = formData["Email"] || selectedLead.email;
+      const responsible = formData["Responsável da Empresa"] || selectedLead["Responsável da Empresa"];
+
+      if (!cnpj || cnpj.trim() === '') {
         alert('O CNPJ é obrigatório para gerar o orçamento.');
         setIsSaving(false);
         return;
       }
-      if (!selectedLead.address || selectedLead.address.trim() === '' || selectedLead.address === 'Endereço não informado') {
+      if (!address || address.trim() === '' || address === 'Endereço não informado') {
         alert('O endereço completo é obrigatório para gerar o orçamento.');
         setIsSaving(false);
         return;
       }
-      if (!selectedLead.cep || selectedLead.cep.trim() === '') {
+      if (!cep || cep.trim() === '') {
         alert('O CEP é obrigatório para gerar o orçamento.');
         setIsSaving(false);
         return;
@@ -967,12 +1043,6 @@ export default function LeadsPage() {
         return;
       }
       
-      if (isNaN(totalProposal)) {
-        alert('O valor total do orçamento é inválido. Verifique os preços e o frete.');
-        setIsSaving(false);
-        return;
-      }
-      
       const proposalData = {
         items: proposalItems,
         freight: freightCost,
@@ -983,26 +1053,19 @@ export default function LeadsPage() {
         total: totalProposal,
         generatedAt: new Date().toISOString(),
         client: {
-          name: selectedLead.company,
-          address: selectedLead.address,
-          city: selectedLead.city,
-          phone: selectedLead.phone,
-          responsible: selectedLead["Responsável da Empresa"],
-          cnpj: selectedLead.cnpj,
-          cep: selectedLead.cep,
-          email: selectedLead.email
+          name: company,
+          address: address,
+          city: city,
+          phone: phone,
+          responsible: responsible,
+          cnpj: cnpj,
+          cep: cep,
+          email: email
         }
       };
 
       // 1. Save to orcamentos table
-      let orcCols = orcamentoColumns;
-      if (orcCols.length === 0) {
-        console.log('Detecting orcamentos columns...');
-        const { data: orcColsData } = await supabase.from('orcamentos').select('*').limit(1);
-        orcCols = orcColsData && orcColsData.length > 0 ? Object.keys(orcColsData[0]) : [];
-        setOrcamentoColumns(orcCols);
-      }
-      console.log('Using orcamentos columns:', orcCols);
+      console.log('Inserting into orcamentos table...');
 
       const orcamentoPayload: any = {
         lead_id: selectedLead.id,
@@ -1011,15 +1074,12 @@ export default function LeadsPage() {
         freight_cost: freightCost,
         total_value: totalProposal,
         notes: proposalNotes,
-        status: 'Gerado'
+        status: 'Gerado',
+        payment_method: paymentMethod,
+        delivery_deadline: deliveryDeadline,
+        validity_date: validityDate
       };
 
-      // Add optional columns only if they exist in DB
-      if (orcCols.includes('payment_method')) orcamentoPayload.payment_method = paymentMethod;
-      if (orcCols.includes('delivery_deadline')) orcamentoPayload.delivery_deadline = deliveryDeadline;
-      if (orcCols.includes('validity_date')) orcamentoPayload.validity_date = validityDate;
-
-      console.log('Inserting into orcamentos table with payload:', orcamentoPayload);
       const { data: orcamento, error: orcamentoError } = await supabase
         .from('orcamentos')
         .insert(orcamentoPayload)
@@ -1027,53 +1087,39 @@ export default function LeadsPage() {
         .single();
 
       if (orcamentoError) {
-        console.error('Error in orcamentos table:', orcamentoError.message, orcamentoError.code, orcamentoError.details);
-        if (orcamentoError.code === '42P01') {
-          throw new Error('A tabela "orcamentos" não foi encontrada no banco de dados. Por favor, execute o SQL de criação das tabelas.');
-        }
-        throw new Error(`Erro ao salvar orçamento: ${orcamentoError.message || 'Erro desconhecido'}`);
+        console.error('Error in orcamentos table:', orcamentoError);
+        throw new Error(`Erro ao salvar orçamento: ${orcamentoError.message}`);
       }
 
       console.log('Orcamento saved:', orcamento.id);
+
+      // Log activity for budget generation
+      await logActivity(selectedLead.id, 'Budget', `Orçamento gerado no valor de ${new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(totalProposal)}`);
 
       // 2. Generate HTML
       const proposalHtml = generateProposalHtml(proposalData, selectedLead);
 
       // 3. Save to propostas table
-      let propCols = propostaColumns;
-      if (propCols.length === 0) {
-        console.log('Detecting propostas columns...');
-        const { data: propColsData } = await supabase.from('propostas').select('*').limit(1);
-        propCols = propColsData && propColsData.length > 0 ? Object.keys(propColsData[0]) : [];
-        setPropostaColumns(propCols);
-      }
-      
-      const propostaPayload: any = {
-        lead_id: selectedLead.id,
-        html_content: proposalHtml,
-        status: 'Enviada'
-      };
-
-      if (propCols.includes('orcamento_id')) propostaPayload.orcamento_id = orcamento.id;
-
       console.log('Inserting into propostas table...');
       const { data: proposta, error: propostaError } = await supabase
         .from('propostas')
-        .insert(propostaPayload)
+        .insert({
+          lead_id: selectedLead.id,
+          orcamento_id: orcamento.id,
+          html_content: proposalHtml,
+          status: 'Enviada'
+        })
         .select()
         .single();
 
       if (propostaError) {
-        console.error('Error in propostas table:', propostaError.message, propostaError.code, propostaError.details);
-        if (propostaError.code === '42P01') {
-          throw new Error('A tabela "propostas" não foi encontrada no banco de dados. Por favor, execute o SQL de criação das tabelas.');
-        }
-        throw new Error(`Erro ao salvar proposta: ${propostaError.message || 'Erro desconhecido'}`);
+        console.error('Error in propostas table:', propostaError);
+        throw new Error(`Erro ao salvar proposta: ${propostaError.message}`);
       }
 
       // 4. Update leads table
       console.log('Updating leads table...');
-      const proposalString = `ORÇAMENTO DRYWALL - Total: ${new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(totalProposal)}\n\n` +
+      const proposalString = `${selectedLead.product === 'Exaustor Eólico' ? 'ORÇAMENTO EXAUSTOR' : 'ORÇAMENTO DRYWALL'} - Total: ${new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(totalProposal)}\n\n` +
         proposalItems.map(i => `- ${i.name}: ${i.quantity} un x ${new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(i.price)} = ${new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(i.price * i.quantity)}`).join('\n') +
         `\n\nFrete: ${new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(freightCost)}` +
         `\nPagamento: ${paymentMethod}` +
@@ -1093,12 +1139,12 @@ export default function LeadsPage() {
       if (dbColumns.includes('proposta_id')) updatePayload["proposta_id"] = proposta.id;
       
       // Update client data in lead table too
-      if (dbColumns.includes('CNPJ')) updatePayload["CNPJ"] = selectedLead.cnpj;
-      if (dbColumns.includes('cnpj')) updatePayload["cnpj"] = selectedLead.cnpj;
-      if (dbColumns.includes('Endereço')) updatePayload["Endereço"] = selectedLead.address;
-      if (dbColumns.includes('address')) updatePayload["address"] = selectedLead.address;
-      if (dbColumns.includes('CEP')) updatePayload["CEP"] = selectedLead.cep;
-      if (dbColumns.includes('cep')) updatePayload["cep"] = selectedLead.cep;
+      if (dbColumns.includes('CNPJ')) updatePayload["CNPJ"] = cnpj;
+      if (dbColumns.includes('cnpj')) updatePayload["cnpj"] = cnpj;
+      if (dbColumns.includes('Endereço')) updatePayload["Endereço"] = address;
+      if (dbColumns.includes('address')) updatePayload["address"] = address;
+      if (dbColumns.includes('CEP')) updatePayload["CEP"] = cep;
+      if (dbColumns.includes('cep')) updatePayload["cep"] = cep;
 
       const { error: leadUpdateError } = await supabase
         .from('leads')
@@ -1108,6 +1154,9 @@ export default function LeadsPage() {
       if (leadUpdateError) {
         console.warn('Lead update warning (non-fatal):', leadUpdateError);
       }
+
+      // Log activity for proposal generation
+      await logActivity(selectedLead.id, 'Update', `Proposta gerada para o lead`);
 
       setLastGeneratedProposal(proposalData);
       
@@ -1171,7 +1220,7 @@ export default function LeadsPage() {
   return (
     <div className="flex min-h-screen bg-white font-sans selection:bg-blue-500/30">
       <Sidebar />
-      <main className="flex-1 flex flex-col min-w-0 overflow-x-hidden">
+      <main className="flex-1 flex flex-col min-w-0 overflow-x-hidden lg:pl-64">
         <TopBar title="Leads" />
         
         <div className="p-4 sm:p-8 space-y-6 sm:space-y-8 overflow-y-auto bg-white">
@@ -1678,6 +1727,24 @@ export default function LeadsPage() {
                       </div>
                     </div>
 
+                    {/* Segmented Values Row */}
+                    {selectedLead?.proposals?.length > 0 && (
+                      <div className="grid grid-cols-2 gap-4">
+                        <div className="p-4 bg-emerald-50 rounded-2xl border border-emerald-100">
+                          <p className="text-[9px] font-black text-emerald-600 uppercase tracking-widest mb-1">Total Vendido</p>
+                          <p className="text-sm font-black text-emerald-700">
+                            {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(selectedLead.totalSoldValue)}
+                          </p>
+                        </div>
+                        <div className="p-4 bg-amber-50 rounded-2xl border border-amber-100">
+                          <p className="text-[9px] font-black text-amber-600 uppercase tracking-widest mb-1">Ainda em Proposta</p>
+                          <p className="text-sm font-black text-amber-700">
+                            {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(selectedLead.totalProposedValue)}
+                          </p>
+                        </div>
+                      </div>
+                    )}
+
                     {selectedLead?.proposal_details && (
                       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                         <button 
@@ -2005,6 +2072,112 @@ export default function LeadsPage() {
                     </div>
                   </div>
 
+                  {/* Multiple Proposals Section */}
+                  <div className="space-y-4 pt-4">
+                    <div className="flex items-center justify-between border-b border-slate-100 pb-2">
+                      <h4 className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400">Orçamentos e Vendas Segmentadas</h4>
+                      <button 
+                        type="button"
+                        onClick={() => {
+                          // Open budget modal instead of just adding a row
+                          const isExaustor = formData["Produto"] === "Exaustor Eólico";
+                          const isDrywall = formData["Produto"] === "Perfis de Drywall";
+                          
+                          if (isDrywall) {
+                            setProposalItems([{ ...DRYWALL_PRICE_TABLE[0], quantity: 10 }]);
+                            setProposalNotes(`Proposta para fornecimento de perfis de drywall conforme solicitado por ${formData["Nome"]}.`);
+                          } else if (isExaustor) {
+                            setProposalItems([{ ...EXAUSTOR_PRICE_TABLE[0], quantity: 1 }]);
+                            setProposalNotes(`Proposta para fornecimento de exaustores eólicos conforme solicitado por ${formData["Nome"]}.`);
+                          } else {
+                            setProposalItems([]);
+                            setProposalNotes("");
+                          }
+                          
+                          setFreightCost(0);
+                          setPaymentMethod('CHEQUE 30/60/90');
+                          setDeliveryDeadline('15 dias');
+                          setValidityDate(new Date(Date.now() + 10 * 24 * 60 * 60 * 1000).toISOString().split('T')[0]);
+                          setIsBudgetModalOpen(true);
+                        }}
+                        className="text-[10px] font-black text-blue-600 uppercase tracking-widest flex items-center gap-1 hover:underline"
+                      >
+                        <Plus size={14} />
+                        Adicionar Orçamento
+                      </button>
+                    </div>
+
+                    <div className="space-y-3">
+                      {formData.proposals.length > 0 ? (
+                        formData.proposals.map((prop: any, index: number) => (
+                          <div key={prop.id} className="p-4 bg-slate-50 border border-slate-200 rounded-2xl space-y-3">
+                            <div className="flex items-center justify-between">
+                              <input 
+                                type="text"
+                                className="bg-transparent border-none text-sm font-black text-slate-900 focus:ring-0 p-0 w-2/3"
+                                value={prop.description}
+                                onChange={(e) => {
+                                  const newProps = [...formData.proposals];
+                                  newProps[index].description = e.target.value;
+                                  setFormData({ ...formData, proposals: newProps });
+                                }}
+                              />
+                              <button 
+                                type="button"
+                                onClick={() => {
+                                  const newProps = formData.proposals.filter((_: any, i: number) => i !== index);
+                                  setFormData({ ...formData, proposals: newProps });
+                                }}
+                                className="text-slate-400 hover:text-rose-500 transition-colors"
+                              >
+                                <Trash2 size={16} />
+                              </button>
+                            </div>
+                            
+                            <div className="grid grid-cols-2 gap-3">
+                              <div className="relative">
+                                <span className="absolute left-3 top-1/2 -translate-y-1/2 text-[10px] font-black text-slate-400">R$</span>
+                                <input 
+                                  type="number"
+                                  className="w-full bg-white border border-slate-200 rounded-xl py-2 pl-8 pr-3 text-xs font-bold text-slate-700 focus:ring-2 focus:ring-blue-500/20 outline-none"
+                                  value={prop.value}
+                                  onChange={(e) => {
+                                    const newProps = [...formData.proposals];
+                                    newProps[index].value = Number(e.target.value);
+                                    setFormData({ ...formData, proposals: newProps });
+                                  }}
+                                />
+                              </div>
+                              <select 
+                                className={cn(
+                                  "w-full border rounded-xl py-2 px-3 text-xs font-black uppercase tracking-widest outline-none transition-all",
+                                  prop.status === 'ganho' ? "bg-emerald-50 border-emerald-200 text-emerald-600" :
+                                  prop.status === 'perdido' ? "bg-rose-50 border-rose-200 text-rose-600" :
+                                  "bg-white border-slate-200 text-slate-600"
+                                )}
+                                value={prop.status}
+                                onChange={(e) => {
+                                  const newProps = [...formData.proposals];
+                                  newProps[index].status = e.target.value;
+                                  setFormData({ ...formData, proposals: newProps });
+                                }}
+                              >
+                                <option value="pendente">Pendente</option>
+                                <option value="ganho">Ganho</option>
+                                <option value="perdido">Perdido</option>
+                              </select>
+                            </div>
+                          </div>
+                        ))
+                      ) : (
+                        <div className="p-6 border-2 border-dashed border-slate-200 rounded-2xl text-center">
+                          <Calculator size={24} className="mx-auto text-slate-300 mb-2" />
+                          <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Nenhum orçamento segmentado</p>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+
                   {/* Observations & Proposal Section */}
                   <div className="space-y-4 pt-4">
                     <h4 className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400 border-b border-slate-100 pb-2">Observações e Proposta</h4>
@@ -2140,6 +2313,53 @@ export default function LeadsPage() {
         )}
       </AnimatePresence>
 
+      {/* Delete Confirmation Modal */}
+      <AnimatePresence>
+        {isDeleteConfirmOpen && (
+          <>
+            <motion.div 
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[100]"
+              onClick={() => setIsDeleteConfirmOpen(false)}
+            />
+            <motion.div 
+              initial={{ opacity: 0, scale: 0.95, y: 20 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.95, y: 20 }}
+              className="fixed left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 w-full max-w-md bg-white rounded-3xl shadow-2xl z-[110] overflow-hidden"
+            >
+              <div className="p-8 text-center">
+                <div className="size-20 bg-rose-50 text-rose-600 rounded-full flex items-center justify-center mx-auto mb-6">
+                  <Trash2 size={40} />
+                </div>
+                <h3 className="text-2xl font-black text-slate-900 uppercase tracking-tight mb-2">Confirmar Exclusão</h3>
+                <p className="text-slate-500 mb-8">
+                  Tem certeza que deseja excluir este lead permanentemente? Esta ação não pode ser desfeita.
+                </p>
+                <div className="flex flex-col gap-3">
+                  <button 
+                    onClick={confirmDeleteLead}
+                    disabled={isSaving}
+                    className="w-full py-4 bg-rose-600 hover:bg-rose-700 text-white text-sm font-black uppercase tracking-widest rounded-xl transition-all shadow-lg shadow-rose-600/20 flex items-center justify-center gap-2"
+                  >
+                    {isSaving ? <Loader2 className="animate-spin" size={18} /> : null}
+                    {isSaving ? "Excluindo..." : "Sim, Excluir Lead"}
+                  </button>
+                  <button 
+                    onClick={() => setIsDeleteConfirmOpen(false)}
+                    className="w-full py-3 bg-slate-100 hover:bg-slate-200 text-slate-600 text-xs font-bold uppercase tracking-widest rounded-xl transition-all"
+                  >
+                    Cancelar
+                  </button>
+                </div>
+              </div>
+            </motion.div>
+          </>
+        )}
+      </AnimatePresence>
+
       {/* Budget Generator Modal */}
       <AnimatePresence>
         {isBudgetModalOpen && (
@@ -2160,7 +2380,7 @@ export default function LeadsPage() {
                 <div>
                   <h3 className="text-xl font-black text-slate-900 uppercase tracking-tight flex items-center gap-2">
                     <FileText size={20} className="text-blue-600" />
-                    Gerador de Orçamento - Perfis Drywall
+                    Gerador de Orçamento - {selectedLead?.product === 'Exaustor Eólico' ? 'Exaustor Eólico' : 'Perfis Drywall'}
                   </h3>
                   <p className="text-[10px] font-black text-slate-500 uppercase tracking-widest mt-1">
                     Cliente: {selectedLead?.company} • Vendedor: {selectedLead?.salesperson}
@@ -2235,7 +2455,10 @@ export default function LeadsPage() {
                   <div className="flex items-center justify-between">
                     <h4 className="text-sm font-black text-slate-900 uppercase tracking-widest">Itens do Orçamento</h4>
                     <button 
-                      onClick={() => setProposalItems([...proposalItems, { ...DRYWALL_PRICE_TABLE[0], quantity: 1 }])}
+                      onClick={() => {
+                        const table = selectedLead?.product === 'Exaustor Eólico' ? EXAUSTOR_PRICE_TABLE : DRYWALL_PRICE_TABLE;
+                        setProposalItems([...proposalItems, { ...table[0], quantity: 1 }]);
+                      }}
                       className="text-xs font-black text-blue-600 uppercase tracking-widest flex items-center gap-1 hover:underline"
                     >
                       <Plus size={14} />
@@ -2262,7 +2485,8 @@ export default function LeadsPage() {
                                 className="w-full bg-transparent border-none text-sm font-bold text-slate-700 focus:ring-0 outline-none cursor-pointer"
                                 value={item.id}
                                 onChange={(e) => {
-                                  const selected = DRYWALL_PRICE_TABLE.find(p => p.id === Number(e.target.value));
+                                  const table = selectedLead?.product === 'Exaustor Eólico' ? EXAUSTOR_PRICE_TABLE : DRYWALL_PRICE_TABLE;
+                                  const selected = table.find(p => p.id === Number(e.target.value));
                                   if (selected) {
                                     const newItems = [...proposalItems];
                                     newItems[idx] = { ...newItems[idx], ...selected };
@@ -2270,7 +2494,7 @@ export default function LeadsPage() {
                                   }
                                 }}
                               >
-                                {DRYWALL_PRICE_TABLE.map(p => (
+                                {(selectedLead?.product === 'Exaustor Eólico' ? EXAUSTOR_PRICE_TABLE : DRYWALL_PRICE_TABLE).map(p => (
                                   <option key={p.id} value={p.id}>{p.name}</option>
                                 ))}
                               </select>

@@ -38,6 +38,7 @@ import {
 
 import { useAuth } from '@/hooks/useAuth';
 import { useRouter } from 'next/navigation';
+import { SupabaseAudit } from '@/components/SupabaseAudit';
 
 const teamData = [
   { name: 'Ana', sales: 90 },
@@ -103,7 +104,7 @@ export default function DashboardPage() {
   React.useEffect(() => {
     async function fetchDashboardData() {
       if (!supabase || !user) {
-        if (!authLoading && !user) router.push('/');
+        // if (!authLoading && !user) router.push('/');
         console.warn('Supabase is not configured or user not logged in');
         setActivities(recentActivityMock);
         setIsLoading(false);
@@ -116,7 +117,11 @@ export default function DashboardPage() {
         
         // Filter by salesperson if not admin
         if (!isAdmin && profile) {
-          query = query.eq('salesperson_name', profile.name);
+          // Tenta filtrar por ID ou por nome (Vendedor), incluindo nomes legados
+          const filter = [`salesperson_id.eq.${profile.id}`, `Vendedor.eq."${profile.name}"`];
+          if (profile.name === 'Jonathan') filter.push('Vendedor.eq."Vendas"');
+          if (profile.name === 'Isabele') filter.push('Vendedor.eq."Administrador principal Indavent Exaustores"');
+          query = query.or(filter.join(','));
         }
 
         const { data: leads, error: leadsError } = await query;
@@ -286,7 +291,7 @@ export default function DashboardPage() {
                 id: l.id,
                 type,
                 title: `${title} (SLA: ${timeStr})`,
-                user: l.salesperson_name || 'Vendedor',
+                user: l.Vendedor || l.vendedor || l["Vendedor."] || 'Vendedor',
                 time: timeStr,
                 icon
               };
@@ -349,7 +354,7 @@ export default function DashboardPage() {
   return (
     <div className="flex min-h-screen bg-white font-sans selection:bg-blue-500/30">
       <Sidebar />
-      <main className="flex-1 flex flex-col min-w-0 overflow-x-hidden">
+      <main className="flex-1 flex flex-col min-w-0 overflow-x-hidden lg:pl-64">
         <TopBar title="Dashboard" />
         
         <div className="p-4 sm:p-8 space-y-6 sm:space-y-8 overflow-y-auto bg-white">
@@ -370,6 +375,8 @@ export default function DashboardPage() {
               </button>
             </div>
           </div>
+
+          <SupabaseAudit />
 
           {/* KPI Cards */}
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 sm:gap-6">

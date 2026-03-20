@@ -29,7 +29,11 @@ export function NotificationBell() {
       let query = supabase.from('leads').select('*').order('updated_at', { ascending: false });
       
       if (!isAdmin && profile) {
-        query = query.eq('salesperson_name', profile.name);
+        // Tenta filtrar por ID ou por nome (Vendedor), incluindo nomes legados
+        const filter = [`salesperson_id.eq.${profile.id}`, `Vendedor.eq."${profile.name}"`];
+        if (profile.name === 'Jonathan') filter.push('Vendedor.eq."Vendas"');
+        if (profile.name === 'Isabele') filter.push('Vendedor.eq."Administrador principal Indavent Exaustores"');
+        query = query.or(filter.join(','));
       }
 
       const { data: leads, error } = await query.limit(20);

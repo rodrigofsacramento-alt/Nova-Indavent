@@ -30,13 +30,18 @@ export default function UsersManagementPage() {
   const [searchTerm, setSearchTerm] = useState('');
 
   useEffect(() => {
+    /*
     if (!authLoading && (!user || !isAdmin)) {
       router.push('/');
       return;
     }
+    */
 
     async function fetchUsers() {
-      if (!supabase) return;
+      if (!supabase) {
+        setIsLoading(false);
+        return;
+      }
       try {
         const { data, error } = await supabase
           .from('internal_users')
@@ -52,7 +57,7 @@ export default function UsersManagementPage() {
       }
     }
 
-    if (user && isAdmin) {
+    if (user || !authLoading) {
       fetchUsers();
     }
   }, [user, isAdmin, authLoading, router]);
@@ -89,7 +94,7 @@ export default function UsersManagementPage() {
   return (
     <div className="flex h-screen bg-slate-950 overflow-hidden">
       <Sidebar />
-      <main className="flex-1 flex flex-col overflow-hidden">
+      <main className="flex-1 flex flex-col overflow-hidden lg:pl-64">
         <TopBar title="Gerenciamento de Usuários" />
         
         <div className="flex-1 overflow-y-auto p-6 space-y-6">

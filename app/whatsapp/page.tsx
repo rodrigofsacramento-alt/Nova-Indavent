@@ -63,9 +63,24 @@ const messages = [
   { id: 4, type: 'received', text: 'Olá, qual o status da proposta dos Perfis de Drywall? Acabamos de validar o orçamento interno aqui.', time: '14:30' },
 ];
 
+import { useAuth } from '@/hooks/useAuth';
+import { supabase } from '@/lib/supabase';
+
 export default function WhatsAppPage() {
+  const { user, profile } = useAuth();
+
+  const logWhatsAppActivity = async (action: string) => {
+    if (!supabase || !user) return;
+    await supabase.from('activities').insert({
+      user_id: user.id,
+      type: 'WhatsApp',
+      description: `${profile?.name || user.username} ${action} no WhatsApp`,
+      created_at: new Date().toISOString()
+    });
+  };
+
   return (
-    <div className="flex h-screen w-full bg-slate-950 overflow-hidden">
+    <div className="flex h-screen w-full bg-slate-950 overflow-hidden lg:pl-64">
       <Sidebar />
       
       {/* Chat List Panel */}
@@ -111,7 +126,10 @@ export default function WhatsAppPage() {
           ))}
         </div>
         <div className="p-4 border-t border-slate-800">
-          <button className="w-full bg-blue-600 text-white py-2.5 rounded-lg font-bold text-sm flex items-center justify-center gap-2 hover:bg-blue-700 transition-colors shadow-lg shadow-blue-600/20">
+            <button 
+              onClick={() => logWhatsAppActivity('iniciou novo chat')}
+              className="w-full bg-blue-600 text-white py-2.5 rounded-lg font-bold text-sm flex items-center justify-center gap-2 hover:bg-blue-700 transition-colors shadow-lg shadow-blue-600/20"
+            >
             <Plus size={16} />
             Novo Chat
           </button>
@@ -142,7 +160,10 @@ export default function WhatsAppPage() {
             <button className="size-9 rounded-lg border border-slate-800 flex items-center justify-center text-slate-400 hover:bg-slate-900 transition-colors">
               <Paperclip size={18} />
             </button>
-            <button className="size-9 rounded-lg border border-slate-800 flex items-center justify-center text-blue-500 hover:bg-slate-900 transition-colors">
+            <button 
+              onClick={() => logWhatsAppActivity('clicou em ligar')}
+              className="size-9 rounded-lg border border-slate-800 flex items-center justify-center text-blue-500 hover:bg-slate-900 transition-colors"
+            >
               <Phone size={18} />
             </button>
           </div>
@@ -211,7 +232,10 @@ export default function WhatsAppPage() {
                 rows={1}
               />
             </div>
-            <button className="size-11 bg-blue-600 text-white rounded-full flex items-center justify-center hover:bg-blue-700 shadow-lg shadow-blue-600/30 transition-all active:scale-95 shrink-0">
+            <button 
+              onClick={() => logWhatsAppActivity('enviou mensagem')}
+              className="size-11 bg-blue-600 text-white rounded-full flex items-center justify-center hover:bg-blue-700 shadow-lg shadow-blue-600/30 transition-all active:scale-95 shrink-0"
+            >
               <Send size={20} />
             </button>
           </div>

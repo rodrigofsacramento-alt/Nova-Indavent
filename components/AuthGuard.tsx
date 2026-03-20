@@ -9,6 +9,7 @@ export function AuthGuard({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
 
   useEffect(() => {
+    /*
     const authSession = Cookies.get('auth_session');
 
     // If user is not logged in and trying to access protected routes
@@ -21,6 +22,7 @@ export function AuthGuard({ children }: { children: React.ReactNode }) {
     if (authSession && pathname === '/') {
       router.push('/dashboard');
     }
+    */
   }, [pathname, router]);
 
   return <>{children}</>;
